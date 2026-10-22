@@ -20,3 +20,7 @@ Ouvrir `index.html` dans un navigateur. L'app démarre vide : donne un nom à to
 - `rotation.js` : le moteur qui calcule le plan de changements.
 - `vendor/` et `fonts/` : l'outil PDF (jsPDF) et les polices Barlow, embarqués pour marcher sans internet.
 - `tests/` : vérifications automatiques du moteur. Lancer avec `npm test`.
+
+## Mise en ligne
+
+L'app est publiée par GitHub Pages depuis la branche `main`. `manifest.webmanifest` et `sw.js` la rendent installable sur l'écran d'accueil et utilisable sans réseau. À chaque mise en ligne qui change des fichiers de l'app, augmenter `VERSION` dans `sw.js`.
