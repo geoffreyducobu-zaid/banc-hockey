@@ -132,6 +132,88 @@ function syncDone(){
 function setClock(q, sec){ C.q = Math.max(1, Math.min(S.rules.quarters, q)); C.elapsed = Math.max(0, Math.min(S.rules.qlen*60, sec)); if (C.running) C.startedAt = Date.now(); syncDone(); pushClock(); render(); }
 function adjust(sec){ setClock(C.q, clockElapsed() + sec); }
 function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; setClock(C.q + 1, 0); }
+/* ---------- plusieurs matchs ---------- */
+// Le match ouvert vit dans S (plan, compo, feuille, présents) et le chrono dans C.
+// Les autres matchs sont rangés dans S.matches ; on échange en changeant de match.
+const MATCH_KEYS = ["matchLabel","matchDate","preset","lineup","plan","prevPlan","sheet"];
+const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+let matchesOpen = false, newMatchForm = false;
+function curMatchRec(){
+  const r = {id:S.curMatch}; MATCH_KEYS.forEach(k => r[k] = S[k] ?? null);
+  r.present = S.squad.filter(p => p.present).map(p => p.name);
+  r.clock = {...C, running:false, elapsed: clockElapsed()};
+  return JSON.parse(JSON.stringify(r));
+}
+function ensureMatches(){
+  if (!Array.isArray(S.matches)) S.matches = [];
+  if (!S.curMatch) S.curMatch = newId();
+  if (!S.matches.some(m => m.id === S.curMatch)) S.matches.push(curMatchRec());
+}
+function storeCur(){ const i = S.matches.findIndex(m => m.id === S.curMatch); if (i >= 0) S.matches[i] = curMatchRec(); else S.matches.push(curMatchRec()); }
+function openMatch(id, store = true){
+  if (store) storeCur();
+  const r = S.matches.find(m => m.id === id); if (!r) return;
+  S.curMatch = id;
+  S.matchLabel = r.matchLabel || ""; S.matchDate = r.matchDate || "";
+  S.preset = r.preset || S.preset; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null;
+  S.sheet = r.sheet || {us:[], them:[], pc:0, log:[]};
+  if (Array.isArray(r.present)) S.squad.forEach(p => p.present = r.present.includes(p.name));
+  C = r.clock || freshClock(); C.running = false;
+  preview = null; inc = null; lastAlertKey = ""; persist(); pushClock();
+}
+function createMatch(opp, date, home){
+  storeCur();
+  const us = S.profile?.club || S.teamName || "Nous";
+  const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, lineup:{...S.lineup}, plan:null, prevPlan:null, sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
+  S.matches.push(r); openMatch(r.id, false);
+}
+function removeMatch(id){
+  S.matches = S.matches.filter(m => m.id !== id);
+  if (id === S.curMatch) { if (S.matches.length) openMatch(sortedMatches()[0].id, false); else { S.curMatch = null; createMatch("", "", true); } }
+  persist();
+}
+function matchStatus(r){
+  if (r.plan?.savedAt) return `Terminé · ${r.sheet?.us?.length || 0}–${r.sheet?.them?.length || 0}`;
+  if (r.plan && r.clock && (r.clock.q > 1 || r.clock.elapsed > 0)) return `En cours · Q${r.clock.q}`;
+  return r.plan ? "Plan prêt" : "À préparer";
+}
+function sortedMatches(){
+  const L = S.matches.map(m => m.id === S.curMatch ? curMatchRec() : m);
+  return L.sort((a,b) => (a.matchDate || "9999").localeCompare(b.matchDate || "9999"));
+}
+const fmtDate = d => { if (!d) return "Sans date"; try { return new Date(d + "T12:00:00").toLocaleDateString("fr-BE", {weekday:"short", day:"numeric", month:"short"}); } catch(e){ return d; } };
+function matchBar(){
+  return `<div class="card mbar"><div style="min-width:0"><div class="muted" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.06em">Match ouvert</div><b>${esc(S.matchLabel || "Match sans nom")}</b> <span class="muted">· ${esc(fmtDate(S.matchDate))}</span></div><button class="btn small" id="mList">Mes matchs (${S.matches.length})</button></div>`;
+}
+function matchesView(){
+  const rows = sortedMatches().map(r => `<div class="mrow${r.id === S.curMatch ? " cur" : ""}">
+      <button class="mopen" data-mopen="${esc(r.id)}"><b>${esc(r.matchLabel || "Match sans nom")}</b><span class="muted">${esc(fmtDate(r.matchDate))} · ${esc(matchStatus(r))}</span></button>
+      ${r.id === S.curMatch ? `<span class="live">Ouvert</span>` : ""}
+      <button class="x" data-mdel="${esc(r.id)}" aria-label="Supprimer ce match">✕</button></div>`).join("");
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes matchs</h2><button class="btn small" id="mClose">Fermer</button></div>
+    <div class="mlist2" style="margin-top:12px">${rows}</div>
+    ${newMatchForm ? `<div class="form" style="margin-top:14px">
+        <label class="fld"><span>Adversaire</span><input type="text" id="nmOpp" placeholder="ex. Daring" autocomplete="off"></label>
+        <label class="fld"><span>Date</span><input type="date" id="nmDate"></label></div>
+      <div class="row" style="margin-top:10px">${segBtnsLocal()}</div>
+      <div class="row" style="margin-top:12px"><button class="btn go" id="nmGo">Créer le match</button><button class="btn" id="nmCancel">Annuler</button></div>`
+      : `<button class="btn primary" id="nmOpen" style="margin-top:14px">+ Nouveau match</button>`}
+    <p class="muted" style="margin:12px 0 0;font-size:.88rem">Chaque match garde ses présents, sa compo, son plan, son chrono et son score. À la fin du dernier quart, le match va tout seul dans le suivi de saison.</p>
+  </div>`;
+}
+let nmHome = true;
+function segBtnsLocal(){ return `<div class="seg" role="group"><button data-nmhome="1" aria-pressed="${nmHome}">Domicile</button><button data-nmhome="0" aria-pressed="${!nmHome}">Extérieur</button></div>`; }
+function bindMatches(){
+  $("#mList")?.addEventListener("click", () => { matchesOpen = true; render(); });
+  $("#mClose")?.addEventListener("click", () => { matchesOpen = false; newMatchForm = false; render(); });
+  $("#nmOpen")?.addEventListener("click", () => { newMatchForm = true; render(); $("#nmOpp")?.focus(); });
+  $("#nmCancel")?.addEventListener("click", () => { newMatchForm = false; render(); });
+  document.querySelectorAll("[data-nmhome]").forEach(b => b.addEventListener("click", () => { const o = $("#nmOpp").value, d = $("#nmDate").value; nmHome = b.dataset.nmhome === "1"; render(); $("#nmOpp").value = o; $("#nmDate").value = d; }));
+  $("#nmGo")?.addEventListener("click", () => { createMatch($("#nmOpp").value.trim(), $("#nmDate").value, nmHome); newMatchForm = false; matchesOpen = false; render(); });
+  document.querySelectorAll("[data-mopen]").forEach(b => b.addEventListener("click", () => { if (b.dataset.mopen !== S.curMatch) openMatch(b.dataset.mopen); matchesOpen = false; render(); }));
+  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
+}
 function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
@@ -317,7 +399,7 @@ function importBackup(file){
     try {
       const d = JSON.parse(rd.result);
       if (d.app !== "banc-hockey" || !d.state || !Array.isArray(d.state.squad)) throw new Error("format");
-      const pin = S.pin; applyData(d.state); S.pin = pin;
+      const pin = S.pin; applyData(d.state); S.pin = pin; S.matches = d.state.matches; S.curMatch = d.state.curMatch; ensureMatches();
       if (Array.isArray(d.season)) localStorage.setItem("banc-season", JSON.stringify(d.season));
       season = null; preview = null; persist();
       backupMsg = `Sauvegarde du ${d.savedAt || "?"} rechargée : ${d.state.squad.length} joueurs.`;
@@ -373,7 +455,7 @@ function seasonHtml(){
 }
 
 /* ---------- rendering ---------- */
-const VIEWS = {home:[homeView, bindHome], match:[matchView, bindMatch], coach:[coachView, bindCoach], settings:[settingsView, bindSettings]};
+const VIEWS = {home:[homeView, bindHome], match:[() => matchesOpen ? matchesView() : (far ? "" : matchBar()) + matchView(), () => { bindMatches(); if (!matchesOpen) bindMatch(); }], coach:[coachView, bindCoach], settings:[settingsView, bindSettings]};
 function render(){
   paintSub();
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
@@ -538,7 +620,10 @@ function markBreakDone(){ const qEndT = C.q*S.rules.qlen; visChanges(S.plan).for
 function tick(){
   if (!S.plan) return;
   const el = clockElapsed();
-  if (C.running && el >= S.rules.qlen*60) { C.elapsed = S.rules.qlen*60; C.running = false; saveClock(); beep(3); if (mode === "match") render(); return; }
+  if (C.running && el >= S.rules.qlen*60) { C.elapsed = S.rules.qlen*60; C.running = false; saveClock(); beep(3);
+    if (C.q >= S.rules.quarters && !S.plan.savedAt) saveMatch(); // fin du match : direction le suivi de saison
+    else if (mode === "match") render();
+    return; }
   // auto mark change done 25 s after its time
   const t = matchT();
   visChanges(S.plan).forEach(c => { if (!C.done.includes(c.t) && (t - c.t)*60 > 25) C.done.push(c.t); });
@@ -717,8 +802,8 @@ function coachView(){
   const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
   return `
   ${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs dans « Effectif », avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
-  <div class="card"><h2>Match</h2>
-    <div class="row"><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="Nom du match, ex. Wellington – Daring" aria-label="Nom du match" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600">
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Match en préparation</h2><button class="btn small" id="cList">Mes matchs (${S.matches.length})</button></div>
+    <div class="row" style="margin-top:10px"><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="Nom du match, ex. Wellington – Daring" aria-label="Nom du match" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600">
       <input type="date" id="mDate" value="${esc(S.matchDate||"")}" aria-label="Date du match" style="border:1px solid var(--rule);border-radius:8px;padding:7px 10px;background:var(--bg)"></div>
   </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Effectif</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
@@ -777,6 +862,7 @@ function bindCoach(){
   $("#mLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value.trim(); persist(); render(); });
   $("#mDate")?.addEventListener("change", e => { S.matchDate = e.target.value; persist(); render(); });
   $("#saveMatchC")?.addEventListener("click", saveMatch);
+  $("#cList")?.addEventListener("click", () => { matchesOpen = true; goTo("match"); });
   document.querySelectorAll("[data-delm]").forEach(b => b.addEventListener("click", () => { if (b.dataset.armed) deleteMatch(b.dataset.delm); else { b.dataset.armed = 1; b.textContent = "Sûr ?"; } }));
   $("#gen").addEventListener("click", () => { const b = $("#gen"); b.disabled = true; b.textContent = "Calcul…"; setTimeout(() => { preview = generate(Date.now() % 100000 + (seedN++)); render(); }, 30); });
   $("#use")?.addEventListener("click", () => { S.plan = preview; preview = null; S.prevPlan = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; pushClock(); persist(); render(); });
@@ -785,7 +871,7 @@ function bindCoach(){
 /* ---------- boot ---------- */
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => goTo(b.dataset.tab)));
 applyTheme();
-loadLocal();
+loadLocal(); ensureMatches();
 saveState = "Données de cet appareil";
 render(); paintSub();
 setInterval(tick, 250);
