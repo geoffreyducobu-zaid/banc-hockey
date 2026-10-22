@@ -568,6 +568,10 @@ function readProfile(){
   return v;
 }
 // Code coach : 5 caractères au hasard, sans les signes qu'on confond (0/O, 1/I/L).
+// Champ de code : clavier de chiffres, chiffres masqués.
+const pinField = (id, label, extra = "") => `<input type="text" class="pinf" id="${id}" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" aria-label="${esc(label)}" placeholder="••••" ${extra}>`;
+const digitsOnly = () => document.querySelectorAll(".pinf").forEach(el => el.addEventListener("input", () => { el.value = el.value.replace(/\D/g, "").slice(0, 6); }));
+const pinOk = c => /^(\d{4}|\d{6})$/.test(c);
 function genCoachId(){ const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789", r = new Uint32Array(5); crypto.getRandomValues(r); return Array.from(r, x => A[x % A.length]).join(""); }
 function onboardView(){
   if (newCode) return `<div class="card onb"><h2>Ton code coach</h2>
@@ -579,7 +583,8 @@ function onboardView(){
   return `<div class="card onb"><h2>Bienvenue sur Banc</h2>
     <p style="margin:0">L'app qui prépare tes changements et te prévient pendant le match. Pour commencer, présente-toi :</p>
     <div class="form">${profileFields()}
-      <label class="fld"><span>Code de verrouillage (4 ou 6 chiffres)</span><input type="password" inputmode="numeric" maxlength="6" id="pinNew" autocomplete="off" placeholder="••••••"></label></div>
+      <label class="fld"><span>Code de verrouillage (4 ou 6 chiffres)</span>${pinField("pinNew", "Code de verrouillage")}</label>
+      <label class="fld"><span>Confirme le code</span>${pinField("pinNew2", "Confirme le code")}</label></div>
     <p class="muted" style="margin:0;font-size:.88rem">À quoi il sert : il ferme la partie coach (effectif, notes, temps de jeu visés, réglages). Tu peux donc prêter le téléphone à un joueur ou à ton assistant : ils voient l'Accueil et le Match, mais pas les notes.</p>
     ${onboardMsg ? `<div class="warn">${esc(onboardMsg)}</div>` : ""}
     <button class="btn go big" id="onbGo">Je commence</button>
@@ -590,12 +595,16 @@ function onboardView(){
     ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
   </div>`;
 }
+// Réafficher le formulaire avec un message sans perdre ce qui est déjà tapé (sauf les codes).
+function keepForm(){ const v = {}; document.querySelectorAll("[data-prof]").forEach(el => v[el.dataset.prof] = el.value); render(); document.querySelectorAll("[data-prof]").forEach(el => el.value = v[el.dataset.prof] ?? el.value); }
 function bindOnboard(){
+  digitsOnly();
   $("#codeOk")?.addEventListener("click", () => { newCode = null; goTo("home"); render(); });
   $("#onbGo")?.addEventListener("click", () => {
     const pin = $("#pinNew").value.trim();
-    if (!/^(\d{4}|\d{6})$/.test(pin)) { onboardMsg = "Choisis un code de verrouillage de 4 ou 6 chiffres."; render(); return; }
-    if (!readProfile()) { onboardMsg = "Indique au moins ton prénom et ton équipe."; render(); return; }
+    if (!pinOk(pin)) { onboardMsg = "Choisis un code de verrouillage de 4 ou 6 chiffres."; keepForm(); return; }
+    if ($("#pinNew2").value.trim() !== pin) { onboardMsg = "Les deux codes ne sont pas pareils. Retape-les."; keepForm(); return; }
+    if (!readProfile()) { onboardMsg = "Indique au moins ton prénom et ton équipe."; keepForm(); return; }
     onboardMsg = ""; S.pin = pin;
     if (!S.coachId) S.coachId = genCoachId();
     newCode = S.coachId;
@@ -658,8 +667,9 @@ function settingsView(){
   </div>` : ""}
     <div class="card"><h2>Code de verrouillage</h2>
     <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Ce code protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
-    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="4 ou 6 chiffres" aria-label="Code de verrouillage" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
-      <button class="btn primary" id="pinSave">Enregistrer le code</button>
+    <div class="form" style="max-width:480px"><label class="fld"><span>Nouveau code (4 ou 6 chiffres)</span>${pinField("pinSet", "Nouveau code")}</label><label class="fld"><span>Confirme le code</span>${pinField("pinSet2", "Confirme le code")}</label></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" id="pinSave">Changer le code</button>
       ${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}
       <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
   </div>
@@ -679,7 +689,8 @@ function bindSettings(){
   $("#testSound")?.addEventListener("click", () => { unlockAudio(); beep(2); });
   if (S.pin && !coachOK) { bindPin(); return; }
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
-  $("#pinSave").addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!/^(\d{4}|\d{6})$/.test(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
+  digitsOnly();
+  $("#pinSave").addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
   $("#profSave").addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
   $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
   $("#bkOut")?.addEventListener("click", exportBackup);
@@ -687,8 +698,8 @@ function bindSettings(){
 }
 
 /* ---------- coach ---------- */
-function pinView(title = "Page coach", text = "Entre ton code de verrouillage pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p><input id="pinIn" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Code de verrouillage"><div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
-function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); if (mode === "coach") $("#pinIn").focus(); }
+function pinView(title = "Page coach", text = "Entre ton code de verrouillage pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p>${pinField("pinIn", "Code de verrouillage")}<div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
+function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
 function coachView(){
   const T = computeTargets();
