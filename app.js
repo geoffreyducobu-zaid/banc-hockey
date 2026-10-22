@@ -41,9 +41,9 @@ function saveClock(){ if (ADJ) return; try { localStorage.setItem("banc-clock", 
 function pushClock(){ saveClock(); liveSendClock(); }
 // Toujours enregistré sur le téléphone d'abord ; cloud.js l'envoie en ligne si le coach a un compte.
 function persist(){ if (ADJ) return; saveLocal(); markChanged(); liveChanged(); }
-function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "Banc"; }
+function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "StickMate"; }
 const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
-function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = teamTitle();
+function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
  const el = $("#sub"); if (el && ADJ) { el.innerHTML = `Adjoint<br>` + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(adjointSub())}</span>`; return; }
  if (el) el.innerHTML = (S.profile?.first ? `Coach ${esc(S.profile.first)}<br>` : "") + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
 function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveState; }
@@ -372,7 +372,7 @@ function exportBackup(){
   const data = {app:"banc-hockey", kind:"sauvegarde", version:1, savedAt:new Date().toISOString().slice(0,10), state:st, season:seasonL};
   const blob = new Blob([JSON.stringify(data, null, 1)], {type:"application/json"});
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-  a.download = `banc-${slug(S.teamName || "equipe")}-${data.savedAt}.json`;
+  a.download = `stickmate-${slug(S.teamName || "equipe")}-${data.savedAt}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   backupMsg = "Sauvegarde téléchargée. Garde ce fichier en lieu sûr (mail, Drive...)."; render();
 }
@@ -386,7 +386,7 @@ function importBackup(file){
       if (Array.isArray(d.season)) localStorage.setItem("banc-season", JSON.stringify(d.season));
       season = null; preview = null; persist();
       backupMsg = `Sauvegarde du ${d.savedAt || "?"} rechargée : ${d.state.squad.length} joueurs.`;
-    } catch(e){ backupMsg = "Ce fichier n'est pas une sauvegarde du banc."; }
+    } catch(e){ backupMsg = "Ce fichier n'est pas une sauvegarde StickMate."; }
     render();
   };
   rd.readAsText(file);
@@ -642,7 +642,7 @@ const pinField = (id, label, extra = "") => `<input type="text" class="pinf" id=
 const digitsOnly = () => document.querySelectorAll(".pinf").forEach(el => el.addEventListener("input", () => { el.value = el.value.replace(/\D/g, "").slice(0, 6); }));
 const pinOk = c => /^(\d{4}|\d{6})$/.test(c);
 function onboardView(){
-  return `<div class="card onb"><h2>${user ? "Ton profil" : "Bienvenue sur Banc"}</h2>
+  return `<div class="card onb"><h2>${user ? "Ton profil" : "Bienvenue sur StickMate"}</h2>
     <p style="margin:0">${user ? "Ton compte est prêt." : "L'app qui prépare tes changements et te prévient pendant le match."} Pour commencer, présente-toi :</p>
     <div class="form">${profileFields()}
       <label class="fld"><span>Code de verrouillage (4 ou 6 chiffres)</span>${pinField("pinNew", "Code de verrouillage")}</label>

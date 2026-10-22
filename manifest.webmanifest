@@ -1,6 +1,6 @@
 {
-  "name": "Banc hockey",
-  "short_name": "Banc",
+  "name": "StickMate",
+  "short_name": "StickMate",
   "description": "Plan de rotation et chrono de banc pour coachs de hockey sur gazon",
   "lang": "fr",
   "start_url": "./",

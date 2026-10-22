@@ -1,4 +1,4 @@
-# Banc hockey
+# StickMate
 
 Outil de banc pour coachs de hockey sur gazon : plan de rotation des joueurs, chrono par quart avec alertes de changement, gestion des imprévus (blessure, cartons), feuille de match et suivi de saison.
 
