@@ -17,6 +17,37 @@ let inc = null, incBusy = false, incMsg = "";
 let prefs = {sound:true, vibrate:true, theme:"auto"}; try { prefs = {...prefs, ...JSON.parse(localStorage.getItem("banc-prefs") || "{}")}; } catch(e){}
 function savePrefs(){ try { localStorage.setItem("banc-prefs", JSON.stringify(prefs)); } catch(e){} }
 function applyTheme(){ if (prefs.theme === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", prefs.theme); }
+/* ---------- couleur principale (couleur du club) ----------
+   Le coach choisit une couleur (S.color, suit son compte). On en tire une teinte plus foncée pour la barre du haut,
+   la couleur du texte posé dessus (blanc ou presque noir, le plus lisible des deux), et une version de la couleur
+   assez foncée (thème clair) ou assez claire (thème sombre) pour être lue comme du texte sur les cartes. */
+const DEFAULT_COLOR = "#0d5fa8";
+const CLUB_COLORS = [["#0d5fa8","Bleu"],["#13294b","Bleu marine"],["#4fa3e0","Bleu ciel"],["#c8102e","Rouge"],["#7a1f3d","Bordeaux"],["#e8730c","Orange"],["#f2c200","Jaune"],["#0b7a43","Vert"],["#5b2d8e","Violet"],["#1d1d1f","Noir"]];
+const hexOk = h => /^#[0-9a-f]{6}$/i.test(h || "");
+const hexRgb = h => [1,3,5].map(i => parseInt(h.substr(i,2), 16));
+const rgbHex = c => "#" + c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+function lum(h){ const [r,g,b] = hexRgb(h).map(v => { v /= 255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); }); return 0.2126*r + 0.7152*g + 0.0722*b; }
+function contrast(a, b){ const x = lum(a), y = lum(b); return (Math.max(x,y) + 0.05) / (Math.min(x,y) + 0.05); }
+const mix = (h, to, t) => { const a = hexRgb(h), b = hexRgb(to); return rgbHex(a.map((v,i) => v + (b[i]-v)*t)); };
+const INK = "#0f1d2b";
+const onColor = h => contrast(h, "#ffffff") >= contrast(h, INK) ? "#ffffff" : INK;
+// Pousse la couleur vers « to » jusqu'à atteindre le contraste voulu avec « bg ».
+function readableOn(h, bg, to, min){ for (let t = 0; t <= 1; t += 0.05) { const c = mix(h, to, t); if (contrast(c, bg) >= min) return c; } return to; }
+function clubPalette(h){
+  if (!hexOk(h)) h = DEFAULT_COLOR;
+  const club2 = lum(h) > 0.4 ? h : mix(h, "#000000", 0.15);
+  return {club:h, club2, onclub:onColor(h), onclub2:onColor(club2),
+    "clubink-l":readableOn(h, "#ffffff", "#000000", 4.5), "clubink-d":readableOn(h, "#132130", "#ffffff", 4.5)};
+}
+let appliedColor = "";
+function applyColor(){
+  const h = hexOk(S.color) ? S.color.toLowerCase() : DEFAULT_COLOR;
+  if (h === appliedColor) return;
+  appliedColor = h;
+  const p = clubPalette(h), st = document.documentElement.style;
+  Object.entries(p).forEach(([k,v]) => st.setProperty("--" + k, v));
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.club2);
+}
 const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
 let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
 let season = null, seasonMsg = "";
@@ -439,6 +470,7 @@ function seasonHtml(){
 /* ---------- rendering ---------- */
 const VIEWS = {home:[homeView, bindHome], match:[() => matchesOpen ? matchesView() : (far ? "" : matchBar()) + matchView(), () => { bindMatches(); if (!matchesOpen) bindMatch(); }], coach:[coachView, bindCoach], settings:[settingsView, bindSettings]};
 function render(){
+  applyColor();
   paintSub();
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
   const v = $("#view");
@@ -704,6 +736,14 @@ function bindHome(){
 
 /* ---------- réglages ---------- */
 function segBtns(key, opts){ return `<div class="seg" role="group">${opts.map(([v,l]) => `<button data-pref="${key}" data-val="${v}" aria-pressed="${String(prefs[key]) === String(v)}">${esc(l)}</button>`).join("")}</div>`; }
+function colorSetting(){
+  const cur = hexOk(S.color) ? S.color.toLowerCase() : DEFAULT_COLOR, known = CLUB_COLORS.some(([h]) => h === cur);
+  return `<div class="set" style="display:block"><b>Couleur principale</b><div class="muted">La couleur de ton club. Elle colore la barre du haut et les boutons. Le texte reste toujours lisible : l'app choisit blanc ou noir toute seule.</div>
+    <div class="swatches" role="group" aria-label="Couleur principale">${CLUB_COLORS.map(([h,l]) => `<button class="sw" data-color="${h}" style="background:${h}" aria-pressed="${h === cur}" aria-label="${esc(l)}" title="${esc(l)}"></button>`).join("")}
+      <label class="sw other" title="Autre couleur" aria-label="Autre couleur" data-on="${!known}" style="${known ? "" : `background:${cur}`}"><input type="color" id="colorPick" value="${cur}"></label></div>
+    <div class="clubprev"><button class="btn primary" type="button" tabindex="-1">Aperçu bouton</button>${cur !== DEFAULT_COLOR ? `<button class="btn small" id="colorReset">Remettre le bleu StickMate</button>` : ""}</div></div>`;
+}
+function setColor(h){ if (!hexOk(h)) return; S.color = h.toLowerCase(); persist(); render(); }
 function settingsView(){
   const locked = S.pin && !coachOK;
   const rulesHtml = RULE_LABELS.map(([k,l,st]) => `<label>${esc(l)}<input type="number" step="${st}" data-rule="${k}" value="${S.rules[k]}"></label>`).join("");
@@ -712,6 +752,7 @@ function settingsView(){
       <div class="row" style="flex-shrink:0">${segBtns("sound", [[true,"Oui"],[false,"Non"]])}<button class="btn small" id="testSound">Tester</button></div></div>
     <div class="set"><div><b>Vibreur</b><div class="muted">${canVibrate ? "Le téléphone vibre avant chaque changement." : "Pas disponible sur iPhone : Apple ne laisse pas les apps web faire vibrer le téléphone."}</div></div>
       ${canVibrate ? segBtns("vibrate", [[true,"Oui"],[false,"Non"]]) : ""}</div>
+    ${colorSetting()}
     <div class="set"><div><b>Thème</b><div class="muted">Auto suit le réglage du téléphone.</div></div>
       ${segBtns("theme", [["auto","Auto"],["light","Clair"],["dark","Sombre"]])}</div>
   </div>
@@ -748,6 +789,11 @@ function bindSettings(){
     savePrefs(); applyTheme(); render();
   }));
   $("#testSound")?.addEventListener("click", () => { unlockAudio(); beep(2); });
+  v.querySelectorAll("[data-color]").forEach(b => b.addEventListener("click", () => setColor(b.dataset.color)));
+  // « input » pendant qu'on glisse dans le sélecteur : on prévisualise sans enregistrer ; « change » à la fin : on garde.
+  $("#colorPick")?.addEventListener("input", e => { if (hexOk(e.target.value)) { const p = clubPalette(e.target.value), st = document.documentElement.style; Object.entries(p).forEach(([k,c]) => st.setProperty("--" + k, c)); appliedColor = ""; } });
+  $("#colorPick")?.addEventListener("change", e => setColor(e.target.value));
+  $("#colorReset")?.addEventListener("click", () => setColor(DEFAULT_COLOR));
   if (S.pin && !coachOK) { bindPin(); return; }
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
   digitsOnly();
