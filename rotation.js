@@ -411,7 +411,7 @@
   }
   // ---------- re-plan after an incident ----------
   function replan(plan, o) {
-    // o: {T, positions, players:[{name,pos,target,locked,oneBlock,maxStint}], rules, out:[names], vacate:[posIds], freezeUntil, freezeOut:[names], adjust:{name:+-min}, seed}
+    // o: {T, positions, players:[{name,pos,target,locked,oneBlock,maxStint}], rules, out:[names], vacate:[posIds], freezeUntil, freezeOut:[names], adjust:{name:+-min}, enter:{name,pos}, seed}
     const END = o.rules.quarters * o.rules.qlen;
     const T = o.T, T1 = o.freezeUntil || T;
     const segAt = t => plan.segs.find(s => s.a <= t + EPS && t < s.b - EPS) || plan.segs[plan.segs.length - 1];
@@ -426,6 +426,7 @@
     }
     outSet.forEach(p => delete startOn[p]);
     if (o.swap) { const q = startOn[o.swap.out]; delete startOn[o.swap.out]; startOn[o.swap.in] = o.swap.pos || q; }
+    if (o.enter) startOn[o.enter.name] = o.enter.pos; // remplaçant choisi par le coach (blessure)
     const vac = new Set(o.vacate || []);
     for (const [p, q] of Object.entries(startOn)) if (vac.has(q)) delete startOn[p];
     const positions = o.positions.filter(p => !vac.has(p.id));
