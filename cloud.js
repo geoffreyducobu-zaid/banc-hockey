@@ -62,13 +62,14 @@ function applyCloud(row){
   if (S.pin !== pin) coachOK = false;
   season = null; preview = null; saveLocal();
   SY.user = user.id; SY.localAt = SY.syncedAt = at; saveSync();
+  if (S.liveCode) liveConnect(S.liveCode);
   render();
 }
 function resetState(){ S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:{...DEFAULT_RULES}, plan:null, pin:""}; }
 function clearLocal(){
   ["banc-state", "banc-season", "banc-clock", "banc-sync"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
   SY = loadSync(); resetState(); applyData(SEED); ensureMatches();
-  C = freshClock(); season = null; preview = null; coachOK = false;
+  C = freshClock(); season = null; preview = null; coachOK = false; liveStop();
 }
 function paintCloud(){
   if (!CLOUD_ON) return;
@@ -263,7 +264,35 @@ function accountCard(){
     ${logoutArmed ? `<div class="warn" style="margin-bottom:10px">Des changements ne sont pas encore en ligne (pas de réseau ?). Si tu te déconnectes maintenant, ils seront perdus. Touche encore pour confirmer.</div>` : ""}
     <button class="btn" id="accOut">${logoutArmed ? "Me déconnecter quand même" : "Me déconnecter"}</button></div>`;
 }
+// Carte « Tes données » (RGPD) : ce qui est gardé, où, et suppression du compte.
+let deleteArmed = false, deleteMsg = "";
+function dataCard(){
+  if (!CLOUD_ON || !user) return "";
+  return `<div class="card"><h2>Tes données</h2>
+    <p style="margin:0 0 8px;font-size:.95rem"><b>Ce qui est gardé</b> : ton email, ton profil (prénom, nom, club, équipe), tes joueurs (nom, postes, notes, minutes), tes matchs et ta saison.</p>
+    <p style="margin:0 0 8px;font-size:.95rem"><b>Où</b> : chez Supabase, sur des serveurs en Europe (Francfort). Ton mot de passe est chiffré : personne ne peut le lire, même pas nous.</p>
+    <p style="margin:0 0 8px;font-size:.95rem"><b>Qui les voit</b> : toi seul. Ton adjoint, s'il a le lien du chrono, ne voit que le match (noms, postes, changements), jamais les notes ni les temps visés. Rien n'est revendu ni utilisé pour de la pub.</p>
+    <p class="muted" style="margin:0 0 12px;font-size:.88rem">Tes joueurs sont souvent mineurs : n'indique que ce qui sert au banc (un prénom suffit).</p>
+    <div class="row"><button class="btn" id="dataDl">⬇ Télécharger mes données</button></div>
+    <div class="set" style="margin-top:12px;border-top:1px solid var(--rule)"><div><b>Supprimer mon compte</b><div class="muted">Efface pour de bon ton compte et tout ce qu'il contient, en ligne et sur ce téléphone. Impossible de revenir en arrière.</div></div></div>
+    ${deleteArmed ? `<div class="warn" style="margin-bottom:10px">Sûr ? Ton équipe, tes matchs et ta saison seront effacés pour toujours. Pense à télécharger tes données avant.</div>` : ""}
+    ${deleteMsg ? `<div class="warn" style="margin-bottom:10px">${esc(deleteMsg)}</div>` : ""}
+    <div class="row"><button class="btn${deleteArmed ? " danger" : ""}" id="accDel">${deleteArmed ? "Oui, supprimer définitivement" : "Supprimer mon compte"}</button>${deleteArmed ? `<button class="btn" id="accDelNo">Annuler</button>` : ""}</div></div>`;
+}
+async function deleteAccount(){
+  if (!deleteArmed) { deleteArmed = true; deleteMsg = ""; render(); return; }
+  if (!navigator.onLine) { deleteMsg = "Pas de réseau : il en faut pour supprimer ton compte."; render(); return; }
+  const {error} = await sb.rpc("delete_my_account");
+  if (error) { deleteMsg = "La suppression a échoué (" + (error.message || "erreur") + "). Réessaie."; render(); return; }
+  try { await sb.auth.signOut({scope:"local"}); } catch(e){}
+  try { localStorage.removeItem("banc-auth"); } catch(e){}
+  user = null; deleteArmed = false; deleteMsg = ""; clearLocal();
+  authView = "signup"; authOpen = false; authOk = ""; authMsg = ""; mode = "home"; render(); window.scrollTo(0, 0);
+}
 function bindAccountCard(){
+  $("#dataDl")?.addEventListener("click", exportBackup);
+  $("#accDel")?.addEventListener("click", deleteAccount);
+  $("#accDelNo")?.addEventListener("click", () => { deleteArmed = false; render(); });
   $("#accSignup")?.addEventListener("click", () => openAuth("signup"));
   $("#accLogin")?.addEventListener("click", () => openAuth("login"));
   $("#accOut")?.addEventListener("click", logout);
