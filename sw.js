@@ -1,7 +1,7 @@
 // Service worker : garde une copie de l'app sur le téléphone pour qu'elle
 // s'ouvre sans réseau. Change VERSION à chaque mise en ligne pour que les
-// téléphones récupèrent la nouvelle version.
-const VERSION = "banc-v2";
+// téléphones récupèrent la nouvelle version (et le ?v= des scripts dans index.html).
+const VERSION = "banc-v3";
 const FILES = [
   "./", "index.html", "app.js", "rotation.js", "manifest.webmanifest",
   "vendor/jspdf.umd.min.js", "fonts/fonts.css",
@@ -27,7 +27,8 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
-    fetch(req).then(res => {
+    // no-cache : toujours vérifier auprès du serveur, sans réutiliser le cache du navigateur
+    fetch(req, {cache: "no-cache"}).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req, {ignoreSearch: true}).then(r => r || caches.match("index.html")))
