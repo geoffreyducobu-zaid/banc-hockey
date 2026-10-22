@@ -229,7 +229,13 @@ function bindMatches(){
   document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
 }
 // Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
-function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
+// Sans copie de ce plan (match modifié avant la v12), on reprend le plan précédent s'il n'a aucun imprévu,
+// sinon on recalcule un plan neuf sans imprévu.
+function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]};
+  if (S.basePlan) S.plan = S.basePlan;
+  else if (S.prevPlan && !(S.prevPlan.events || []).length) S.plan = S.prevPlan;
+  else if (S.plan && (S.plan.events || []).length) { const p = generate(Date.now() % 100000 + (seedN++)); if (!p.error) S.plan = p; }
+  S.basePlan = null; S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
 function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Array.from({length:n}, () => [200,100]).flat()); } catch(e){} } if (!actx || !prefs.sound) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
@@ -602,7 +608,7 @@ function bindMatch(){
   $("#m10")?.addEventListener("click", () => adjust(-10));
   $("#p10")?.addEventListener("click", () => adjust(10));
   $("#doneBtn")?.addEventListener("click", () => { const t = matchT(); const nx = visChanges(S.plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.36); if (nx) C.done.push(nx.t); pushClock(); render(); });
-  $("#reset")?.addEventListener("click", function(){ if (this.dataset.armed) { resetMatch(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
+  $("#reset")?.addEventListener("click", function(){ if (this.dataset.armed) { this.disabled = true; this.textContent = "Calcul…"; setTimeout(resetMatch, 30); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
   $("#m60")?.addEventListener("click", () => adjust(-60));
   $("#p60")?.addEventListener("click", () => adjust(60));
   $("#qReset")?.addEventListener("click", () => setClock(C.q, 0));
