@@ -62,3 +62,34 @@ test("toujours un donneur (D) et un bloqueur (B) sur le terrain", () => {
 test("temps de jeu proche du temps visé (2'30 max d'écart)", () => {
   for (const p of Object.keys(plan.played)) assert.ok(Math.abs(plan.played[p] - plan.targets[p]) <= 2.5, `${p} : ${plan.played[p]} au lieu de ${plan.targets[p]}`);
 });
+
+// ---------- blessure en cours de match ----------
+const positions = Object.keys(LINE).map(id => ({id, gk: id === "G"}));
+const players = present.map(p => ({name:p.name, pos:p.pos, target:targets[p.name], locked: p.note >= 5 && !p.minutes, oneBlock: p.note >= 5, maxStint:p.maxStint || 0, roles:p.roles || [], minStint:minStintOf(p)}));
+const segAt = (pl, t) => pl.segs.find(s => s.a <= t + EPS && t < s.b - EPS);
+const TB = 24; // Q2, 6'30
+const hurt = Object.keys(segAt(plan, TB).on).find(n => segAt(plan, TB).on[n] === "10"); // l'avant droit
+const hurtPos = segAt(plan, TB).on[hurt];
+const sub = present.find(p => p.pos.includes(hurtPos) && !(p.name in segAt(plan, TB).on)).name;
+const afterInjury = R.replan(plan, {T:TB, positions, players, rules, out:[hurt], vacate:[], adjust:{}, enter:{name:sub, pos:hurtPos}, seed:3, saIters:8000});
+
+test("blessure : le remplaçant choisi entre tout de suite au poste du blessé", () => {
+  assert.ok(!afterInjury.error, String(afterInjury.warnings));
+  assert.strictEqual(segAt(afterInjury, TB).on[sub], hurtPos);
+  assert.ok(!(hurt in segAt(afterInjury, TB).on));
+});
+
+test("blessure : le blessé ne rejoue plus, 11 joueurs à des postes qu'ils connaissent", () => {
+  for (const s of afterInjury.segs.filter(s => s.a >= TB - EPS)) {
+    assert.ok(!(hurt in s.on), `${hurt} sur le terrain à ${s.a}`);
+    assert.strictEqual(Object.keys(s.on).length, 11);
+    for (const [p, q] of Object.entries(s.on)) assert.ok(byName[p].pos.includes(q) || ex.lineup[q] === p, `${p} en ${q}`);
+  }
+});
+
+test("fin de blessure : le joueur revient et rejoue plus tard", () => {
+  const TR = 40;
+  const back = R.replan(afterInjury, {T:TR, positions, players, rules, out:[], vacate:[], adjust:{}, seed:5, saIters:8000});
+  assert.ok(!back.error, String(back.warnings));
+  assert.ok(back.segs.some(s => s.a >= TR - EPS && hurt in s.on), `${hurt} ne rejoue pas`);
+});

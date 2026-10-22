@@ -141,27 +141,60 @@ function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Arr
 const INC = {bless:{label:"Blessure",icon:"🩹",d:0}, vert:{label:"Carton vert",icon:"🟩",d:2}, jaune:{label:"Carton jaune",icon:"🟨",d:5}, jaune10:{label:"Carton jaune",icon:"🟨",d:10}, rouge:{label:"Carton rouge",icon:"🟥",d:0}};
 const timedCard = t => t==="vert" || t==="jaune" || t==="jaune10";
 function eventsOf(){ return (S.plan && S.plan.events) || []; }
-function outForGood(){ return eventsOf().filter(e => e.type==="bless" || e.type==="rouge").map(e => e.player); }
-function doIncident(){
-  const T = Math.floor(matchT()*10)/10;
-  const type = inc.type, p = inc.player, info = INC[type] || {d:0};
+function outForGood(){ return eventsOf().filter(e => (e.type==="bless" && e.back === undefined) || e.type==="rouge").map(e => e.player); }
+// Minutes jouées par un joueur jusqu'à t dans le plan.
+function playedUntil(plan, n, t){ return plan.segs.reduce((a, s) => a + (n in s.on ? Math.max(0, Math.min(s.b, t) - s.a) : 0), 0); }
+// Remplaçants possibles pour un blessé : ceux qui connaissent son poste d'abord, puis ceux qui ont le plus de temps à rattraper.
+function injuryBench(seg, p, T){
+  const q = seg.on[p], tg = S.plan.targets || {};
+  return present().filter(x => !(x.name in seg.on) && !outForGood().includes(x.name))
+    .map(x => ({name:x.name, knows: x.pos.includes(q) || extraPos(x.name).includes(q), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
+    .sort((a,b) => (b.knows - a.knows) || (b.left - a.left));
+}
+// Postes ajoutés en cours de match (joueur mis hors de son poste pour remplacer un blessé).
+function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).map(e => e.extraPos); }
+function replanBase(T){
   const positions = PRESETS[S.preset].map(x => ({id:x[0], gk:x[2]==="gk"}));
   const Tg = computeTargets();
-  const players = present().map(x => ({name:x.name, pos:x.pos, target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(+x.note>=5 && !x.minutes), oneBlock: +x.note>=5, maxStint: x.maxStint ? +x.maxStint : 0, roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(+x.note>=5 && !x.minutes), oneBlock: +x.note>=5, maxStint: x.maxStint ? +x.maxStint : 0, roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
+  // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
+  return o;
+}
+function applyPlan(res){ S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
+function endInjury(n){
+  const T = Math.floor(matchT()*10)/10;
+  const o = replanBase(T); o.out = o.out.filter(x => x !== n);
+  const res = R.replan(S.plan, o);
+  if (res.error) { incMsg = res.warnings.join(" "); render(); return; }
+  res.events = [...eventsOf().map(e => e.type==="bless" && e.player===n && e.back === undefined ? {...e, back:T} : e), {t:T, type:"retour", player:n}];
+  applyPlan(res);
+}
+function doIncident(){
+  if (inc.pending) { applyPlan(inc.pending); return; }
+  const T = Math.floor(matchT()*10)/10;
+  const type = inc.type, p = inc.player, info = INC[type] || {d:0};
   const seg = segAt(S.plan, T);
-  const prevVac = eventsOf().filter(e => e.type==="rouge").map(e => e.pos);
-  const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: prevVac.slice(), seed: Date.now()%100000, adjust: {}};
+  const o = replanBase(T);
+  let extra = null;
   if (type === "libre") o.swap = {out: p, in: inc.inP, pos: inc.pos || null};
-  if (type === "bless") o.out.push(p);
+  if (type === "bless") {
+    o.out.push(p);
+    const q = seg.on[p];
+    if (inc.inP && q) {
+      o.enter = {name: inc.inP, pos: q};
+      const pl = o.players.find(x => x.name === inc.inP);
+      if (!pl.pos.includes(q)) { pl.pos = [...pl.pos, q]; extra = q; }
+    }
+  }
   if (type === "rouge") { o.out.push(p); o.vacate.push(seg.on[p]); }
   if (timedCard(type)) { o.freezeUntil = Math.min(S.rules.quarters*S.rules.qlen, T + info.d); o.freezeOut = [p]; if (!inc.catchUp) o.adjust[p] = -info.d; }
-  // keep earlier adjustments
-  eventsOf().forEach(e => { if (timedCard(e.type) && !e.catchUp) o.adjust[e.player] = (o.adjust[e.player]||0); });
   const res = R.replan(S.plan, o);
   if (res.error) { incMsg = res.warnings.join(" "); incBusy = false; render(); return; }
-  res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
-  S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = "";
-  syncDone(); pushClock(); persist(); render();
+  res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, extraPos: extra, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
+  // Une règle ne peut pas être tenue : on montre pourquoi avant d'appliquer.
+  if (res.warnings.length) { inc.pending = res; incBusy = false; render(); return; }
+  applyPlan(res);
 }
 function activeBanners(t){
   const out = [];
@@ -169,7 +202,8 @@ function activeBanners(t){
     const i = INC[e.type];
     if (timedCard(e.type) && t >= e.t - 1e-6 && t < e.t + e.d) out.push(`<div class="banner ${e.type}"><b>${i.icon} ${esc(i.label)} : ${esc(e.player)}</b> exclu, on joue à 10. Retour dans <span data-until="${e.t+e.d}">${fmtClock((e.t+e.d-t)*60)}</span></div>`);
     if (e.type==="rouge" && t >= e.t - 1e-6) out.push(`<div class="banner rouge"><b>🟥 Carton rouge : ${esc(e.player)}</b> exclu jusqu'à la fin, on joue à 10.</div>`);
-    if (e.type==="bless" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner bless"><b>🩹 ${esc(e.player)} blessé</b> : le plan a été recalculé sans lui.</div>`);
+    if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(`<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span><button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button></div>`);
+    if (e.type==="retour" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner vert"><b>✚ ${esc(e.player)} de retour</b> : il est sur le banc, le plan lui redonne du temps.</div>`);
   });
   return out.join("");
 }
@@ -194,10 +228,23 @@ function incidentPanel(seg){
   if (!inc) return "";
   const onField = Object.keys(seg.on);
   const card = timedCard(inc.type);
+  if (inc.pending) return `<div class="card incp"><h2>À vérifier</h2>
+    <p style="margin:0 0 8px">Le nouveau plan ne peut pas respecter toutes les règles :</p>
+    <div class="warn">${inc.pending.warnings.map(w => esc(nicePos(w))).join("<br>")}</div>
+    <p class="muted" style="margin:8px 0 0;font-size:.92rem">Souvent, c'est parce que peu de joueurs connaissent ce poste. Tu peux valider quand même, ou revenir en arrière et choisir un autre remplaçant (même hors de son poste).</p>
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo">Valider quand même</button><button class="btn" id="incBack">Revenir</button></div>
+  </div>`;
+  const q = inc.type === "bless" && inc.player ? seg.on[inc.player] : null;
+  const subs = q ? injuryBench(seg, inc.player, matchT()) : [];
+  if (q && inc.inP === undefined) inc.inP = subs[0]?.name || null;
+  const subHtml = q ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui le remplace au poste ${pill(q)} ${esc(posName(q))} ?</div>
+    <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && x.knows ? " <small>conseillé</small>" : x.knows ? "" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
+    ${inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} jouera ${esc(posName(q))} jusqu'à la fin du match.</div>` : ""}` : "";
   return `<div class="card incp"><h2>Imprévu</h2>
     <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quel joueur ?</div>
     <div class="inc-players">${onField.map(n => `<button class="btn" data-incp="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)}</button>`).join("")}</div>
+    ${subHtml}
     ${card ? `<label class="row" style="margin-top:10px;font-size:.95rem"><input type="checkbox" id="catchUp" ${inc.catchUp?"checked":""}> Rattraper le temps de la carte plus tard</label>` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
     <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
@@ -391,7 +438,8 @@ function matchView(){
       const who = onIds.find(([p,q]) => q === id)?.[0] || "Vide";
       const rl = (S.squad.find(p => p.name === who)?.roles || []).join("");
       return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}</span></div>`;}).join("")}</div>`;
-  const benchNames = present().map(p=>p.name).filter(n => !(n in seg.on));
+  const hurt = outForGood();
+  const benchNames = present().map(p=>p.name).filter(n => !(n in seg.on)).map(n => hurt.includes(n) ? n + " 🩹" : n);
   const qChanges = visChanges(plan).filter(c => fmtQ(c.t).q === C.q || (Math.abs(c.t - (C.q-1)*ql) < 1e-6 && C.q>1) || (Math.abs(c.t - C.q*ql)<1e-6));
   const upList = qChanges.map(c => {
     const isBrk = Math.abs(c.t/ql - Math.round(c.t/ql)) < 1e-6;
@@ -467,8 +515,11 @@ function bindMatch(){
   document.querySelectorAll("[data-swo]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.swo; render(); }));
   document.querySelectorAll("[data-swi]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swi; render(); }));
   bindSheet();
-  document.querySelectorAll("[data-inct]").forEach(b => b.addEventListener("click", () => { inc.type = b.dataset.inct; render(); }));
-  document.querySelectorAll("[data-incp]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.incp; render(); }));
+  document.querySelectorAll("[data-inct]").forEach(b => b.addEventListener("click", () => { inc.type = b.dataset.inct; inc.inP = undefined; render(); }));
+  document.querySelectorAll("[data-incp]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.incp; inc.inP = undefined; render(); }));
+  document.querySelectorAll("[data-incin]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.incin; render(); }));
+  document.querySelectorAll("[data-heal]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) endInjury(this.dataset.heal); else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } }));
+  $("#incBack")?.addEventListener("click", () => { inc.pending = null; render(); });
   $("#catchUp")?.addEventListener("change", e => { inc.catchUp = e.target.checked; });
   $("#incGo")?.addEventListener("click", () => { incBusy = true; render(); setTimeout(doIncident, 40); });
 }
