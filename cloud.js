@@ -16,7 +16,9 @@ function saveSync(){ try { localStorage.setItem("banc-sync", JSON.stringify(SY))
 const appUrl = () => location.origin + location.pathname;
 const dirty = () => SY.localAt > SY.syncedAt;
 function localSeason(){ try { return JSON.parse(localStorage.getItem("banc-season") || "[]"); } catch(e){ return []; } }
-function hasLocalData(){ return !!(S.profile || S.squad.length || localSeason().length); }
+// Une équipe « compte » s'il y a des joueurs ou des matchs dans la saison (un profil seul ne suffit pas).
+function hasLocalData(){ return !!(S.squad.length || localSeason().length); }
+const rowHasData = row => !!((row.state?.squad || []).length || (row.season || []).length);
 
 /* ---------- synchro ---------- */
 function markChanged(){ if (!CLOUD_ON) return; SY.localAt = Date.now(); saveSync(); scheduleSync(); }
@@ -32,9 +34,10 @@ async function sync(){
     const cloudAt = row ? Date.parse(row.updated_at) : 0;
     if (SY.user !== user.id) {
       // Première connexion sur ce téléphone : on ne mélange jamais deux équipes sans demander.
-      if (row && hasLocalData()) { cloudChoice = row; syncing = false; render(); return; }
+      // On ne demande que si le téléphone et le compte ont chacun des joueurs ou des matchs.
+      if (row && hasLocalData() && rowHasData(row)) { cloudChoice = row; syncing = false; render(); return; }
       SY.user = user.id; saveSync();
-      if (row) applyCloud(row); else if (hasLocalData()) { SY.localAt = Date.now(); await push(); }
+      if (row && !hasLocalData()) applyCloud(row); else if (hasLocalData()) { SY.localAt = Date.now(); await push(); }
     }
     else if (row && cloudAt > SY.syncedAt && cloudAt >= SY.localAt) applyCloud(row);
     else if (!row || dirty()) await push();
