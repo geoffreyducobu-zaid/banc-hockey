@@ -1,4 +1,4 @@
--- Base en ligne de l'app Banc. À coller une seule fois dans Supabase :
+-- Base en ligne de l'app StickMate. À coller une seule fois dans Supabase :
 -- SQL Editor > New query > coller tout ce fichier > Run.
 
 -- Une ligne par coach : son équipe, ses matchs (state) et sa saison (season).

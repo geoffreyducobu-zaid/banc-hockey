@@ -23,17 +23,17 @@ Authentication > Sign In / Providers > Email : « Confirm email » doit être ac
 
 Authentication > Emails > Templates.
 
-**Confirm signup**, sujet : `Confirme ton compte Banc`
+**Confirm signup**, sujet : `Confirme ton compte StickMate`
 
 ```html
-<h2>Bienvenue sur Banc</h2>
+<h2>Bienvenue sur StickMate</h2>
 <p>Touche le lien ci-dessous pour confirmer ton adresse email :</p>
 <p><a href="{{ .ConfirmationURL }}">Confirmer mon compte</a></p>
 <p>Ensuite, ouvre l'app et connecte-toi avec ton email et ton mot de passe.</p>
 <p>Si tu n'as pas créé de compte, ignore ce message.</p>
 ```
 
-**Reset password**, sujet : `Ton nouveau mot de passe Banc`
+**Reset password**, sujet : `Ton nouveau mot de passe StickMate`
 
 ```html
 <h2>Mot de passe oublié</h2>

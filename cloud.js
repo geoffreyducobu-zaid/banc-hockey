@@ -215,7 +215,7 @@ function accountScreen(){
   const tabs = `<div class="seg" role="group" style="align-self:flex-start"><button data-auth="signup" aria-pressed="${authView === "signup"}">Créer un compte</button><button data-auth="login" aria-pressed="${authView !== "signup"}">Me connecter</button></div>`;
   const later = `<button class="btn" id="auLater" style="align-self:flex-start">${S.profile ? "Plus tard" : "Continuer sans compte"}</button>
       <p class="muted" style="margin:0;font-size:.85rem">${S.profile ? "Tes données restent sur ce téléphone en attendant." : "Sans compte, tout reste seulement sur ce téléphone. Tu pourras créer ton compte plus tard dans Réglages."}</p>`;
-  const intro = `<h2>Bienvenue sur Banc</h2><p style="margin:0">L'app qui prépare tes changements et te prévient pendant le match. Avec un compte, ton équipe est sauvegardée en ligne et tu la retrouves sur n'importe quel téléphone.</p>`;
+  const intro = `<h2>Bienvenue sur StickMate</h2><p style="margin:0">L'app qui prépare tes changements et te prévient pendant le match. Avec un compte, ton équipe est sauvegardée en ligne et tu la retrouves sur n'importe quel téléphone.</p>`;
   if (authView === "forgot") return `<div class="card onb"><h2>Mot de passe oublié</h2>
       <p style="margin:0">Tape l'email de ton compte : on t'envoie un lien pour choisir un nouveau mot de passe.</p>
       <div class="form">${field("auEmail", "Email", "email", "email", authEmail)}</div>
