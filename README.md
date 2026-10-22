@@ -12,3 +12,11 @@ Ouvrir `index.html` dans un navigateur. L'app démarre vide : donne un nom à to
 
 - Les joueurs ne voient jamais les notes ni les temps visés (onglet Coach protégé par un code).
 - Les postes sont affichés par leur nom (« Back gauche », « Milieu off. »), jamais par un numéro.
+
+## Organisation des fichiers
+
+- `index.html` : la page et le style (couleurs en haut, dans `:root`).
+- `app.js` : les écrans (Match, Coach), le chrono, la sauvegarde.
+- `rotation.js` : le moteur qui calcule le plan de changements.
+- `vendor/` et `fonts/` : l'outil PDF (jsPDF) et les polices Barlow, embarqués pour marcher sans internet.
+- `tests/` : vérifications automatiques du moteur. Lancer avec `npm test`.

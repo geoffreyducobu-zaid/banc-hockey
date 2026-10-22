@@ -1,0 +1,277 @@
+{
+ "preset": "3-2-3-2",
+ "rules": {
+  "alertSec": 30,
+  "breakChanges": true,
+  "endBlock": 3,
+  "firstChange": 6,
+  "gkOnlyAtBreaks": true,
+  "maxBench": 10,
+  "maxEntries": 3,
+  "maxStint": 22,
+  "minBench": 3,
+  "minPlay": 35,
+  "minStint": 6,
+  "qlen": 17.5,
+  "quarters": 4,
+  "startBlock": 4,
+  "minDef": 10,
+  "minMid": 8,
+  "minAtt": 6
+ },
+ "lineup": {
+  "1": "Joueur 3",
+  "2": "Joueur 2",
+  "3": "Joueur 4",
+  "4": "Joueur 6",
+  "5": "Joueur 7",
+  "6": "Joueur 8",
+  "7": "Joueur 9",
+  "8": "Joueur 10",
+  "9": "Joueur 13",
+  "10": "Joueur 15",
+  "G": "Joueur 1"
+ },
+ "squad": [
+  {
+   "maxStint": 0,
+   "minutes": 0,
+   "name": "Joueur 1",
+   "note": 5,
+   "pos": [
+    "G"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 62,
+   "name": "Joueur 2",
+   "note": 5,
+   "pos": [
+    "2"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 43,
+   "name": "Joueur 3",
+   "note": 3,
+   "pos": [
+    "1",
+    "3"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 50,
+   "name": "Joueur 4",
+   "note": 4,
+   "pos": [
+    "3",
+    "1"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 44,
+   "name": "Joueur 5",
+   "note": 3.5,
+   "pos": [
+    "1",
+    "3"
+   ],
+   "present": true,
+   "roles": [
+    "B"
+   ]
+  },
+  {
+   "maxStint": 0,
+   "minutes": 52,
+   "name": "Joueur 6",
+   "note": 4,
+   "pos": [
+    "4",
+    "5",
+    "6"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 52.5,
+   "name": "Joueur 7",
+   "note": 4,
+   "pos": [
+    "5",
+    "4",
+    "2"
+   ],
+   "present": true,
+   "roles": [
+    "D"
+   ]
+  },
+  {
+   "maxStint": 0,
+   "minutes": 47,
+   "name": "Joueur 8",
+   "note": 4,
+   "pos": [
+    "4",
+    "5",
+    "7",
+    "6",
+    "8"
+   ],
+   "present": true,
+   "roles": [
+    "D"
+   ]
+  },
+  {
+   "maxStint": 0,
+   "minutes": 48,
+   "name": "Joueur 9",
+   "note": 4,
+   "pos": [
+    "7",
+    "8",
+    "6"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 48,
+   "name": "Joueur 10",
+   "note": 4,
+   "pos": [
+    "7",
+    "8",
+    "6"
+   ],
+   "present": true,
+   "roles": [
+    "B"
+   ]
+  },
+  {
+   "maxStint": 0,
+   "minutes": 43,
+   "name": "Joueur 11",
+   "note": 3.5,
+   "pos": [
+    "6",
+    "8"
+   ],
+   "present": true,
+   "roles": [
+    "B"
+   ]
+  },
+  {
+   "maxStint": 0,
+   "minutes": 43,
+   "name": "Joueur 12",
+   "note": 3,
+   "pos": [
+    "6",
+    "8",
+    "1",
+    "3"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minFirst": 8,
+   "minutes": 43,
+   "name": "Joueur 13",
+   "note": 3.5,
+   "pos": [
+    "9",
+    "10",
+    "7"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 9,
+   "minutes": 35,
+   "name": "Joueur 14",
+   "note": 2,
+   "pos": [
+    "9",
+    "10"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 44,
+   "name": "Joueur 15",
+   "note": 3.5,
+   "pos": [
+    "9",
+    "10"
+   ],
+   "present": true,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 44,
+   "name": "Joueur 16",
+   "note": 3.5,
+   "pos": [
+    "9",
+    "10"
+   ],
+   "present": true,
+   "roles": [
+    "D"
+   ]
+  },
+  {
+   "maxStint": 0,
+   "minutes": 0,
+   "name": "Joueur 17",
+   "note": 3,
+   "pos": [
+    "9",
+    "10"
+   ],
+   "present": false,
+   "roles": []
+  },
+  {
+   "maxStint": 0,
+   "minutes": 0,
+   "name": "Joueur 18",
+   "note": 3.5,
+   "pos": [
+    "7",
+    "6",
+    "8",
+    "9",
+    "10"
+   ],
+   "present": false,
+   "roles": []
+  }
+ ]
+}
