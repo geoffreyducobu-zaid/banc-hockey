@@ -93,3 +93,20 @@ test("fin de blessure : le joueur revient et rejoue plus tard", () => {
   assert.ok(!back.error, String(back.warnings));
   assert.ok(back.segs.some(s => s.a >= TR - EPS && hurt in s.on), `${hurt} ne rejoue pas`);
 });
+
+test("blessure : un remplaçant hors poste prend un poste qu'il connaît, un joueur du terrain glisse au poste du blessé", () => {
+  const on = segAt(plan, TB).on;
+  // On fabrique le cas : un joueur du banc qui ne joue pas au poste du blessé,
+  // et un joueur du terrain qui connaît à la fois son propre poste et celui du blessé.
+  const cand = players.find(p => !(p.name in on) && !p.pos.includes(hurtPos) && !p.pos.includes("G"));
+  const mover = Object.keys(on).find(n => n !== hurt && on[n] !== "G" && on[n] !== hurtPos);
+  const pl = players.map(p => p.name === cand.name ? {...p, pos:[...p.pos, on[mover]]} : p.name === mover ? {...p, pos:[...p.pos, hurtPos]} : p);
+  const res = R.replan(plan, {T:TB, positions, players:pl, rules, out:[hurt], vacate:[], adjust:{}, enter:{name:cand.name, pos:null}, seed:3, saIters:8000});
+  assert.ok(!res.error, String(res.warnings));
+  const s = segAt(res, TB).on;
+  assert.ok(cand.name in s, `${cand.name} n'entre pas`);
+  assert.notStrictEqual(s[cand.name], hurtPos, `${cand.name} joue hors poste`);
+  assert.ok(pl.find(p => p.name === cand.name).pos.includes(s[cand.name]), `${cand.name} en ${s[cand.name]}`);
+  const ch = res.changes.find(c => Math.abs(c.t - TB) < EPS);
+  assert.ok(ch && ch.moves.length >= 1, "aucune réorganisation annoncée");
+});
