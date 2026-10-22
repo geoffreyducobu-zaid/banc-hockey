@@ -12,7 +12,6 @@ const RULE_LABELS = [["qlen","Durée d'un quart (min)",0.5],["firstChange","Q1 :
 let S = {squad:[],preset:"3-2-3-2",lineup:{},rules:{...DEFAULT_RULES},plan:null,pin:""};
 let mode = "home", coachOK = false, preview = null, seedN = 1;
 const SID = Math.random().toString(36).slice(2);
-let liveRef = null, liveOK = false, liveBusy = false, liveAgain = false;
 let inc = null, incBusy = false, incMsg = "";
 // Réglages de l'app, propres à cet appareil (pas dans la sauvegarde).
 let prefs = {sound:true, vibrate:true, theme:"auto"}; try { prefs = {...prefs, ...JSON.parse(localStorage.getItem("banc-prefs") || "{}")}; } catch(e){}
@@ -35,25 +34,18 @@ const fmtQ = t => { const ql = S.rules.qlen; const q = Math.min(S.rules.quarters
 /* ---------- storage ---------- */
 function applyData(v){ v = JSON.parse(JSON.stringify(v)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules:{...DEFAULT_RULES, ...(v.rules||{})}}; }
 function loadLocal(){ let v = null; try { v = JSON.parse(localStorage.getItem("banc-state") || "null"); } catch(e){} applyData(v || SEED); }
-function saveLocal(){ try { localStorage.setItem("banc-state", JSON.stringify(S)); } catch(e){} }
+// L'adjoint ne touche jamais aux données du téléphone : il ne fait qu'afficher le match du coach.
+function saveLocal(){ if (ADJ) return; try { localStorage.setItem("banc-state", JSON.stringify(S)); } catch(e){} }
 function loadClock(){ try { return JSON.parse(localStorage.getItem("banc-clock") || "null") || {q:1,elapsed:0,running:false,startedAt:0,done:[]}; } catch(e){ return {q:1,elapsed:0,running:false,startedAt:0,done:[]}; } }
-function saveClock(){ try { localStorage.setItem("banc-clock", JSON.stringify(C)); } catch(e){} }
-function pushClock(){
-  saveClock();
-  if (!liveRef) return;
-  (async function go(){
-    if (liveBusy) { liveAgain = true; return; }
-    liveBusy = true;
-    try { await liveRef.set({...JSON.parse(JSON.stringify(C)), by: SID, at: Date.now()}); } catch(e){}
-    liveBusy = false; if (liveAgain) { liveAgain = false; go(); }
-  })();
-}
+function saveClock(){ if (ADJ) return; try { localStorage.setItem("banc-clock", JSON.stringify(C)); } catch(e){} }
+function pushClock(){ saveClock(); liveSendClock(); }
 // Toujours enregistré sur le téléphone d'abord ; cloud.js l'envoie en ligne si le coach a un compte.
-function persist(){ saveLocal(); markChanged(); }
+function persist(){ if (ADJ) return; saveLocal(); markChanged(); liveChanged(); }
 function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "Banc"; }
 const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
 function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = teamTitle();
- const el = $("#sub"); if (el) el.innerHTML = (S.profile?.first ? `Coach ${esc(S.profile.first)}<br>` : "") + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
+ const el = $("#sub"); if (el && ADJ) { el.innerHTML = `Adjoint<br>` + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(adjointSub())}</span>`; return; }
+ if (el) el.innerHTML = (S.profile?.first ? `Coach ${esc(S.profile.first)}<br>` : "") + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
 function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveState; }
 
 /* ---------- plan helpers ---------- */
@@ -275,7 +267,7 @@ function activeBanners(t){
     const i = INC[e.type];
     if (timedCard(e.type) && t >= e.t - 1e-6 && t < e.t + e.d) out.push(`<div class="banner ${e.type}"><b>${i.icon} ${esc(i.label)} : ${esc(e.player)}</b> exclu, on joue à 10. Retour dans <span data-until="${e.t+e.d}">${fmtClock((e.t+e.d-t)*60)}</span></div>`);
     if (e.type==="rouge" && t >= e.t - 1e-6) out.push(`<div class="banner rouge"><b>🟥 Carton rouge : ${esc(e.player)}</b> exclu jusqu'à la fin, on joue à 10.</div>`);
-    if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(`<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span><button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button></div>`);
+    if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(`<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span>${ADJ ? "" : `<button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button>`}</div>`);
     if (e.type==="retour" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner vert"><b>✚ ${esc(e.player)} de retour</b> : il est sur le banc, le plan lui redonne du temps.</div>`);
   });
   return out.join("");
@@ -449,6 +441,7 @@ function render(){
   paintSub();
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
   const v = $("#view");
+  if (ADJ) { document.body.classList.add("adjoint"); mode = "match"; const v2 = $("#view"); if (!S.plan) { v2.innerHTML = adjointWait(); return; } v2.innerHTML = matchView(); bindMatch(); return; }
   const acc = accountScreen(), onboard = !!acc || !S.profile;
   document.body.classList.toggle("onboard", onboard);
   if (acc) { v.innerHTML = acc; bindAccount(); return; }
@@ -492,7 +485,7 @@ function matchView(){
   const qEndT = C.q*ql;
   let alertHtml;
   const matchOver = atEnd && C.q >= S.rules.quarters;
-  if (!next) alertHtml = `<div class="alert"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
+  if (!next) alertHtml = `<div class="alert"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
   else {
     const isBreakChange = Math.abs(next.t - qEndT) < 1e-6 && C.q < S.rules.quarters;
     const secs = (next.t - t) * 60;
@@ -530,6 +523,7 @@ function matchView(){
     </div>`;
   return `<div class="match">
     <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      ${shareCard()}
       ${banners}
       ${incidentPanel(seg)}
       <div class="card clock">
@@ -541,22 +535,22 @@ function matchView(){
           <button class="btn" id="m10">−10 s</button><button class="btn" id="p10">+10 s</button>
         </div>
         <div class="row">
-          <button class="btn warnb" id="incOpen">⚠ Imprévu</button>
-          <button class="btn small" id="swapOpen">↔ Changement</button>
-          ${S.prevPlan ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
+          ${ADJ ? "" : `<button class="btn warnb" id="incOpen">⚠ Imprévu</button>
+          <button class="btn small" id="swapOpen">↔ Changement</button>`}
+          ${S.prevPlan && !ADJ ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
           <button class="btn" id="farOn">⤢ Vue de loin</button>
-          <span class="live ${liveOK?"on":""}">${liveOK ? "● En direct" : ""}</span>
+          ${liveButton()}
         </div>
         <div class="nav" aria-label="Navigation dans le match">
           <button class="btn" id="m60">−1 min</button><button class="btn" id="p60">+1 min</button>
           <button class="btn" id="qReset">↺ Quart à 0</button>
           <button class="btn" id="qPrev" ${C.q<=1?"disabled":""}>◂ Quart préc.</button>
           <button class="btn" id="qNext" ${C.q>=S.rules.quarters?"disabled":""}>Quart suiv. ▸</button>
-          <button class="btn" id="reset">Match à 0</button>
+          ${ADJ ? "" : `<button class="btn" id="reset">Match à 0</button>`}
         </div>
       </div>
       ${alertHtml}
-      ${sheetCard(seg)}
+      ${ADJ ? "" : sheetCard(seg)}
     </div>
     <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
       <div class="card"><h2>Sur le terrain</h2>${pitch}<div style="margin-top:12px"><div class="muted" style="font-size:.85rem;margin-bottom:6px">Sur le banc</div><div class="bench">${benchNames.map(n=>`<span>${esc(n)}</span>`).join("") || '<span>Personne</span>'}</div></div></div>
@@ -567,6 +561,7 @@ function pitchLines(){ return `<div class="l" style="inset:3% 4%;border-radius:4
 
 let tickTimer = null, lastAlertKey = "";
 function bindMatch(){
+  bindShare();
   $("#goCoach")?.addEventListener("click", () => goTo("coach"));
   $("#start")?.addEventListener("click", startClock);
   $("#pause")?.addEventListener("click", pauseClock);
@@ -611,7 +606,7 @@ function tick(){
   if (!S.plan) return;
   const el = clockElapsed();
   if (C.running && el >= S.rules.qlen*60) { C.elapsed = S.rules.qlen*60; C.running = false; saveClock(); beep(3);
-    if (C.q >= S.rules.quarters && !S.plan.savedAt) saveMatch(); // fin du match : direction le suivi de saison
+    if (C.q >= S.rules.quarters && !S.plan.savedAt && !ADJ) saveMatch(); // fin du match : direction le suivi de saison
     else if (mode === "match") render();
     return; }
   // auto mark change done 25 s after its time
@@ -741,7 +736,8 @@ function settingsView(){
     <p class="muted" style="margin:0 0 10px;font-size:.92rem">${CLOUD_ON && user ? "Ton compte sauvegarde déjà tout en ligne. Tu peux en plus garder un fichier de sauvegarde (effectif, plan, saison) chez toi." : "Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil."} Le code de verrouillage n'est pas dans le fichier.</p>
     <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
     ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
-  </div>`}`;
+  </div>
+  ${dataCard()}`}`;
 }
 function bindSettings(){
   const v = $("#view");
@@ -851,9 +847,11 @@ function bindCoach(){
 /* ---------- boot ---------- */
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => goTo(b.dataset.tab)));
 applyTheme();
-loadLocal(); ensureMatches(); delete S.coachId;
+if (ADJ) C = freshClock();
+else { loadLocal(); ensureMatches(); delete S.coachId; }
 saveState = "Données de cet appareil";
-cloudInit(); paintCloud();
+if (!ADJ) { cloudInit(); paintCloud(); }
+liveInit();
 render(); paintSub();
 setInterval(tick, 250);
 

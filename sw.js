@@ -1,10 +1,10 @@
 // Service worker : garde une copie de l'app sur le téléphone pour qu'elle
 // s'ouvre sans réseau. Change VERSION à chaque mise en ligne pour que les
 // téléphones récupèrent la nouvelle version (et le ?v= des scripts dans index.html).
-const VERSION = "banc-v9";
+const VERSION = "banc-v10";
 const FILES = [
-  "./", "index.html", "app.js", "rotation.js", "cloud.js", "config.js", "manifest.webmanifest",
-  "vendor/jspdf.umd.min.js", "vendor/supabase.js", "fonts/fonts.css",
+  "./", "index.html", "app.js", "rotation.js", "cloud.js", "live.js", "config.js", "manifest.webmanifest",
+  "vendor/jspdf.umd.min.js", "vendor/supabase.js", "vendor/qrcode.js", "fonts/fonts.css",
   "fonts/barlow-latin-400-normal.woff2", "fonts/barlow-latin-500-normal.woff2",
   "fonts/barlow-latin-600-normal.woff2", "fonts/barlow-latin-700-normal.woff2",
   "fonts/barlow-condensed-latin-500-normal.woff2", "fonts/barlow-condensed-latin-600-normal.woff2",
