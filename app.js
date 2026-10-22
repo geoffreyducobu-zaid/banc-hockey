@@ -61,9 +61,9 @@ function persist(){
     if (saveAgain) { saveAgain = false; go(); }
   }, 800);
 }
-function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "Banc"; }
+function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "StickMate"; }
 const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
-function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = teamTitle();
+function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
  const el = $("#sub"); if (el) el.innerHTML = (S.profile?.first ? `Coach ${esc(S.profile.first)}<br>` : "") + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
 function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveState; }
 
@@ -389,7 +389,7 @@ function exportBackup(){
   const data = {app:"banc-hockey", kind:"sauvegarde", version:1, savedAt:new Date().toISOString().slice(0,10), state:st, season:seasonL};
   const blob = new Blob([JSON.stringify(data, null, 1)], {type:"application/json"});
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-  a.download = `banc-${slug(S.teamName || "equipe")}-${data.savedAt}.json`;
+  a.download = `stickmate-${slug(S.teamName || "equipe")}-${data.savedAt}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   backupMsg = "Sauvegarde téléchargée. Garde ce fichier en lieu sûr (mail, Drive...)."; render();
 }
@@ -403,7 +403,7 @@ function importBackup(file){
       if (Array.isArray(d.season)) localStorage.setItem("banc-season", JSON.stringify(d.season));
       season = null; preview = null; persist();
       backupMsg = `Sauvegarde du ${d.savedAt || "?"} rechargée : ${d.state.squad.length} joueurs.`;
-    } catch(e){ backupMsg = "Ce fichier n'est pas une sauvegarde du banc."; }
+    } catch(e){ backupMsg = "Ce fichier n'est pas une sauvegarde StickMate."; }
     render();
   };
   rd.readAsText(file);
@@ -665,7 +665,7 @@ function onboardView(){
     <p class="muted" style="margin:0;font-size:.92rem">Tu le retrouves à tout moment dans Réglages. Bientôt, ces deux codes te permettront de retrouver ton équipe sur un autre téléphone.</p>
     <button class="btn go big" id="codeOk">C'est noté</button>
   </div>`;
-  return `<div class="card onb"><h2>Bienvenue sur Banc</h2>
+  return `<div class="card onb"><h2>Bienvenue sur StickMate</h2>
     <p style="margin:0">L'app qui prépare tes changements et te prévient pendant le match. Pour commencer, présente-toi :</p>
     <div class="form">${profileFields()}
       <label class="fld"><span>Code de verrouillage (4 ou 6 chiffres)</span>${pinField("pinNew", "Code de verrouillage")}</label>
