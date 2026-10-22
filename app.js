@@ -116,7 +116,7 @@ function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; 
 /* ---------- plusieurs matchs ---------- */
 // Le match ouvert vit dans S (plan, compo, feuille, présents) et le chrono dans C.
 // Les autres matchs sont rangés dans S.matches ; on échange en changeant de match.
-const MATCH_KEYS = ["matchLabel","matchDate","preset","lineup","plan","prevPlan","sheet"];
+const MATCH_KEYS = ["matchLabel","matchDate","preset","lineup","plan","prevPlan","basePlan","sheet"];
 const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 let matchesOpen = false, newMatchForm = false;
@@ -139,7 +139,7 @@ function openMatch(id, store = true){
   const r = S.matches.find(m => m.id === id); if (!r) return;
   S.curMatch = id;
   S.matchLabel = r.matchLabel || ""; S.matchDate = r.matchDate || "";
-  S.preset = r.preset || S.preset; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null;
+  S.preset = r.preset || S.preset; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null;
   S.sheet = r.sheet || {us:[], them:[], pc:0, log:[]};
   if (Array.isArray(r.present)) S.squad.forEach(p => p.present = r.present.includes(p.name));
   C = r.clock || freshClock(); C.running = false;
@@ -148,7 +148,7 @@ function openMatch(id, store = true){
 function createMatch(opp, date, home){
   if (S.curMatch) storeCur();
   const us = S.profile?.club || S.teamName || "Nous";
-  const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, lineup:{...S.lineup}, plan:null, prevPlan:null, sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
+  const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, lineup:{...S.lineup}, plan:null, prevPlan:null, basePlan:null, sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
   S.matches.push(r); openMatch(r.id, false);
 }
 function removeMatch(id){
@@ -197,7 +197,8 @@ function bindMatches(){
   document.querySelectorAll("[data-mopen]").forEach(b => b.addEventListener("click", () => { if (b.dataset.mopen !== S.curMatch) openMatch(b.dataset.mopen); matchesOpen = false; render(); }));
   document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
 }
-function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; persist(); pushClock(); render(); }
+// Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
+function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
 function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Array.from({length:n}, () => [200,100]).flat()); } catch(e){} } if (!actx || !prefs.sound) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
@@ -226,7 +227,7 @@ function replanBase(T){
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
 }
-function applyPlan(res){ S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
+function applyPlan(res){ if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
 function endInjury(n){
   const T = Math.floor(matchT()*10)/10;
   const o = replanBase(T); o.out = o.out.filter(x => x !== n);
@@ -841,7 +842,7 @@ function bindCoach(){
   $("#cList")?.addEventListener("click", () => { matchesOpen = true; goTo("match"); });
   document.querySelectorAll("[data-delm]").forEach(b => b.addEventListener("click", () => { if (b.dataset.armed) deleteMatch(b.dataset.delm); else { b.dataset.armed = 1; b.textContent = "Sûr ?"; } }));
   $("#gen").addEventListener("click", () => { const b = $("#gen"); b.disabled = true; b.textContent = "Calcul…"; setTimeout(() => { preview = generate(Date.now() % 100000 + (seedN++)); render(); }, 30); });
-  $("#use")?.addEventListener("click", () => { S.plan = preview; preview = null; S.prevPlan = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; pushClock(); persist(); render(); });
+  $("#use")?.addEventListener("click", () => { S.plan = preview; preview = null; S.prevPlan = null; S.basePlan = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; pushClock(); persist(); render(); });
 }
 
 /* ---------- boot ---------- */
