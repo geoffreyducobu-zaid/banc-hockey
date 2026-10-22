@@ -613,3 +613,6 @@ render(); paintSub();
 setInterval(tick, 250);
 // La synchro en ligne (code d'équipe, chrono partagé) arrive à l'étape suivante.
 
+// Copie hors ligne de l'app (seulement quand elle est servie en ligne, pas en fichier local).
+try { navigator.storage?.persist?.(); } catch(e){}
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
