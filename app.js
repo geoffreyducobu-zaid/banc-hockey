@@ -61,10 +61,10 @@ function persist(){
     if (saveAgain) { saveAgain = false; go(); }
   }, 800);
 }
-function teamTitle(){ return S.teamName ? `Banc ${S.teamName}` : "Banc"; }
+function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "Banc"; }
 const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
 function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = teamTitle();
- const el = $("#sub"); if (el) el.innerHTML = (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
+ const el = $("#sub"); if (el) el.innerHTML = (S.profile?.first ? `Coach ${esc(S.profile.first)}<br>` : "") + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
 function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveState; }
 
 /* ---------- plan helpers ---------- */
@@ -378,6 +378,9 @@ function render(){
   paintSub();
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
   const v = $("#view");
+  const onboard = !S.profile || !!newCode;
+  document.body.classList.toggle("onboard", onboard);
+  if (onboard) { v.innerHTML = onboardView(); bindOnboard(); return; }
   if (mode === "coach" && S.pin && !coachOK) { v.innerHTML = pinView(); bindPin(); return; }
   const [view, bind] = VIEWS[mode] || VIEWS.home;
   v.innerHTML = view(); bind();
@@ -551,10 +554,60 @@ function tick(){
   const ce = $("#count"); if (ce && next && secs > 0.5 && !(Math.abs(next.t - C.q*S.rules.qlen)<1e-6 && secs > S.rules.alertSec)) ce.textContent = fmtClock(secs);
 }
 
+/* ---------- inscription (première ouverture) ---------- */
+let newCode = null, onboardMsg = "";
+const PROFILE_FIELDS = [["first","Prénom","ex. Geoffrey",true],["last","Nom","",false],["club","Club","ex. Wellington",false],["team","Équipe","ex. Messieurs 1",true]];
+function profileFields(){
+  const val = k => k === "team" ? (S.teamName || "") : (S.profile?.[k] || "");
+  return PROFILE_FIELDS.map(([k,l,ph,req]) => `<label class="fld"><span>${esc(l)}${req ? "" : ' <small class="muted">(facultatif)</small>'}</span><input type="text" data-prof="${k}" value="${esc(val(k))}" placeholder="${esc(ph)}" autocomplete="off"></label>`).join("");
+}
+function readProfile(){
+  const v = {}; document.querySelectorAll("[data-prof]").forEach(el => v[el.dataset.prof] = el.value.trim());
+  if (!v.first || !v.team) return null;
+  S.profile = {first:v.first, last:v.last, club:v.club}; S.teamName = v.team;
+  return v;
+}
+// Code coach : 5 caractères au hasard, sans les signes qu'on confond (0/O, 1/I/L).
+function genCoachId(){ const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789", r = new Uint32Array(5); crypto.getRandomValues(r); return Array.from(r, x => A[x % A.length]).join(""); }
+function onboardView(){
+  if (newCode) return `<div class="card onb"><h2>Ton code coach</h2>
+    <div class="code">${esc(newCode)}</div>
+    <p style="margin:0">C'est ton identifiant. Note-le bien (photo, notes du téléphone…), avec ton code de verrouillage.</p>
+    <p class="muted" style="margin:0;font-size:.92rem">Tu le retrouves à tout moment dans Réglages. Bientôt, ces deux codes te permettront de retrouver ton équipe sur un autre téléphone.</p>
+    <button class="btn go big" id="codeOk">C'est noté</button>
+  </div>`;
+  return `<div class="card onb"><h2>Bienvenue sur Banc</h2>
+    <p style="margin:0">L'app qui prépare tes changements et te prévient pendant le match. Pour commencer, présente-toi :</p>
+    <div class="form">${profileFields()}
+      <label class="fld"><span>Code de verrouillage (6 chiffres)</span><input type="password" inputmode="numeric" maxlength="6" id="pinNew" autocomplete="off" placeholder="••••••"></label></div>
+    <p class="muted" style="margin:0;font-size:.88rem">Ce code ouvre la partie coach. Les joueurs peuvent utiliser l'app sans voir les notes ni les temps de jeu.</p>
+    ${onboardMsg ? `<div class="warn">${esc(onboardMsg)}</div>` : ""}
+    <button class="btn go big" id="onbGo">Je commence</button>
+  </div>
+  <div class="card"><h2>J'ai déjà mes données</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Charge le fichier de sauvegarde téléchargé depuis l'app sur ton autre téléphone. Bientôt, ton code coach suffira.</p>
+    <label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label>
+    ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
+  </div>`;
+}
+function bindOnboard(){
+  $("#codeOk")?.addEventListener("click", () => { newCode = null; goTo("home"); render(); });
+  $("#onbGo")?.addEventListener("click", () => {
+    const pin = $("#pinNew").value.trim();
+    if (!/^\d{6}$/.test(pin)) { onboardMsg = "Choisis un code de verrouillage de 6 chiffres."; render(); return; }
+    if (!readProfile()) { onboardMsg = "Indique au moins ton prénom et ton équipe."; render(); return; }
+    onboardMsg = ""; S.pin = pin;
+    if (!S.coachId) S.coachId = genCoachId();
+    newCode = S.coachId;
+    coachOK = true; mode = "home"; persist(); render(); window.scrollTo(0, 0);
+  });
+  $("#bkIn")?.addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); });
+}
+
 /* ---------- accueil ---------- */
 function homeView(){
   const ready = !!S.plan, title = matchTitle();
-  return `<div class="card"><h2>Bienvenue${S.teamName ? ` au banc des ${esc(S.teamName)}` : ""}</h2>
+  return `<div class="card"><h2>Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !</h2>
     <p style="margin:0">Cette app prépare tes changements pour que chaque joueur ait son temps de jeu, puis te prévient pendant le match : qui entre, qui sort et à quel poste.</p>
   </div>
   <div class="card"><h2>Prochain match</h2>
@@ -568,7 +621,7 @@ function homeView(){
       <li><b>Coach</b>, avant le match : coche les présents, choisis la compo de départ et génère le plan de rotation.</li>
       <li><b>Match</b> : lance le chrono. ${+S.rules.alertSec} secondes avant chaque changement, l'app te prévient (son et écran).</li>
       <li>Un blessé, un carton ? Touche « Imprévu » : le plan se recalcule tout seul.</li>
-      <li><b>Réglages</b> : son des alertes, thème, règles de rotation, code coach et sauvegarde.</li>
+      <li><b>Réglages</b> : son des alertes, thème, ton profil, règles de rotation, codes et sauvegarde.</li>
     </ol>
   </div>`;
 }
@@ -590,20 +643,28 @@ function settingsView(){
     <div class="set"><div><b>Thème</b><div class="muted">Auto suit le réglage du téléphone.</div></div>
       ${segBtns("theme", [["auto","Auto"],["light","Clair"],["dark","Sombre"]])}</div>
   </div>
-  ${locked ? pinView("Réglages coach", "Entre le code coach pour modifier les règles, le code et la sauvegarde.") : `
+  ${locked ? pinView("Réglages coach", "Entre ton code de verrouillage pour modifier ton profil, les règles et la sauvegarde.") : `
   <div class="card"><h2>Règles de rotation</h2>
     <p class="muted" style="margin:0 0 10px;font-size:.92rem">Elles servent au prochain plan généré dans la page Coach.</p>
     <div class="rules">${rulesHtml}</div>
   </div>
-    <div class="card"><h2>Code coach</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Un code protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
-    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="ex. 1234" aria-label="Code coach" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
+  <div class="card"><h2>Mon profil</h2>
+    <div class="form">${profileFields()}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary" id="profSave">Enregistrer</button><span id="profMsg" class="muted" style="font-size:.9rem"></span></div>
+  </div>
+  ${S.coachId ? `<div class="card"><h2>Code coach</h2>
+    <div class="code" style="font-size:2.4rem">${esc(S.coachId)}</div>
+    <p class="muted" style="margin:10px 0 0;font-size:.92rem">Ton identifiant. Bientôt, avec ton code de verrouillage, il te permettra de retrouver ton équipe sur un autre téléphone.</p>
+  </div>` : ""}
+    <div class="card"><h2>Code de verrouillage</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Ce code à 6 chiffres protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
+    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="6 chiffres" aria-label="Code de verrouillage" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
       <button class="btn primary" id="pinSave">Enregistrer le code</button>
       ${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}
       <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
   </div>
     <div class="card"><h2>Sauvegarde</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil. Le code coach n'est pas dans le fichier.</p>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil. Le code de verrouillage n'est pas dans le fichier.</p>
     <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
     ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
   </div>`}`;
@@ -618,14 +679,15 @@ function bindSettings(){
   $("#testSound")?.addEventListener("click", () => { unlockAudio(); beep(2); });
   if (S.pin && !coachOK) { bindPin(); return; }
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
-  $("#pinSave").addEventListener("click", () => { S.pin = $("#pinSet").value.trim(); persist(); coachOK = true; render(); const m = $("#pinMsg"); if (m) m.textContent = S.pin ? "Code enregistré." : "Code supprimé."; });
+  $("#pinSave").addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!/^\d{6}$/.test(c)) { $("#pinMsg").textContent = "Le code doit faire 6 chiffres."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
+  $("#profSave").addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
   $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
   $("#bkOut")?.addEventListener("click", exportBackup);
   $("#bkIn")?.addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); });
 }
 
 /* ---------- coach ---------- */
-function pinView(title = "Page coach", text = "Entre le code coach pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p><input id="pinIn" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Code coach"><div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
+function pinView(title = "Page coach", text = "Entre ton code de verrouillage pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p><input id="pinIn" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Code de verrouillage"><div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
 function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
 function coachView(){
@@ -643,10 +705,7 @@ function coachView(){
   const pres = present();
   const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
   return `
-  ${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Donne un nom à ton équipe, puis ajoute tes joueurs dans « Effectif ». Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
-  <div class="card"><h2>Équipe</h2>
-    <div class="row"><input type="text" id="tName" value="${esc(S.teamName||"")}" placeholder="Nom de l'équipe, ex. Messieurs 1" aria-label="Nom de l'équipe" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600"></div>
-  </div>
+  ${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs dans « Effectif », avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
   <div class="card"><h2>Match</h2>
     <div class="row"><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="Nom du match, ex. Wellington – Daring" aria-label="Nom du match" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600">
       <input type="date" id="mDate" value="${esc(S.matchDate||"")}" aria-label="Date du match" style="border:1px solid var(--rule);border-radius:8px;padding:7px 10px;background:var(--bg)"></div>
@@ -704,7 +763,6 @@ function bindCoach(){
   v.querySelectorAll("[data-lu]").forEach(el => el.addEventListener("change", () => { const id = el.dataset.lu; for (const k in S.lineup) if (S.lineup[k] === el.value && k !== id) delete S.lineup[k]; if (el.value) S.lineup[id] = el.value; else delete S.lineup[id]; preview=null; persist(); render(); }));
   $("#pdfB")?.addEventListener("click", makePdf);
   $("#matchLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value; persist(); render(); });
-  $("#tName")?.addEventListener("change", e => { S.teamName = e.target.value.trim(); persist(); render(); });
   $("#mLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value.trim(); persist(); render(); });
   $("#mDate")?.addEventListener("change", e => { S.matchDate = e.target.value; persist(); render(); });
   $("#saveMatchC")?.addEventListener("click", saveMatch);
