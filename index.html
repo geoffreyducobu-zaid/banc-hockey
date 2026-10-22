@@ -1,0 +1,1340 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Banc</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: bench tool — sticky mode bar; Match = clock + next-change alert + live pitch + upcoming list; Coach = squad, system & lineup, rules, generate */
+:root{
+  --bg:#eef3f6; --paper:#ffffff; --ink:#0f1d2b; --muted:#5a6b7b; --rule:#d5dfe7;
+  --turf:#0d5fa8; --turf2:#0a4f8d; --line:#ffffff;
+  --def:#2563c9; --dm:#7a4fd0; --mid:#0f9a84; --att:#e0732a; --gk:#5d6873;
+  --in:#12a05c; --out:#d6423a; --move:#7a4fd0; --warn:#f5a524; --warnInk:#4a2f00; --now:#12a05c;
+  --chip:#e6eef5;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0b141d; --paper:#132130; --ink:#e8f0f7; --muted:#97a9ba; --rule:#24384b;
+  --turf:#0c4f8c; --turf2:#093f70; --chip:#1c3044; --warnInk:#2b1b00; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0b141d; --paper:#132130; --ink:#e8f0f7; --muted:#97a9ba; --rule:#24384b;
+  --turf:#0c4f8c; --turf2:#093f70; --chip:#1c3044; --warnInk:#2b1b00; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 var(--body);font-variant-numeric:tabular-nums}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--turf2)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--turf2);color:#fff}
+.bar-in{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:12px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{font:800 1.35rem/1 var(--display);text-transform:uppercase;letter-spacing:.03em;margin-right:auto}
+.brand small{display:block;font:500 .8rem var(--body);letter-spacing:0;text-transform:none;opacity:.8}
+.tabs{display:flex;background:rgba(255,255,255,.12);border-radius:999px;padding:3px}
+.tabs button{border:0;background:none;color:#fff;font:700 1rem var(--display);text-transform:uppercase;letter-spacing:.05em;padding:7px 16px;border-radius:999px}
+.tabs button[aria-pressed="true"]{background:#fff;color:var(--turf2)}
+main{max-width:1100px;margin:0 auto;padding-block:18px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+.card{background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:16px;min-width:0}
+h2{font:800 1.2rem/1.1 var(--display);text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px;color:var(--turf)}
+:root:not([data-theme="light"]) h2{color:inherit}
+.muted{color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{border:0;border-radius:10px;padding:10px 16px;font:700 1rem var(--display);text-transform:uppercase;letter-spacing:.05em;background:var(--chip);color:var(--ink)}
+.btn.primary{background:var(--turf);color:#fff}
+.btn.go{background:var(--in);color:#fff}
+.btn.big{font-size:1.35rem;padding:14px 22px;border-radius:14px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+/* match grid */
+.match{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:18px;align-items:start}
+@media (max-width:860px){.match{grid-template-columns:1fr}}
+.clock{display:flex;flex-direction:column;gap:12px}
+.clock-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.qbadge{font:800 1.5rem var(--display);background:var(--turf);color:#fff;border-radius:10px;padding:2px 12px}
+.time{font:800 clamp(4rem,14vw,6.5rem)/.9 var(--display);letter-spacing:.01em}
+.time.paused{color:var(--muted)}
+.remain{font:600 1rem var(--body);color:var(--muted)}
+.prog{height:8px;background:var(--chip);border-radius:99px;overflow:hidden;position:relative}
+.prog i{position:absolute;inset:0 auto 0 0;background:var(--turf);border-radius:99px}
+.prog b{position:absolute;top:-3px;bottom:-3px;width:3px;background:var(--warn);border-radius:2px}
+/* alert */
+.alert{border-radius:16px;padding:16px;border:2px solid var(--rule);background:var(--paper);display:flex;flex-direction:column;gap:12px}
+.alert.soon{background:var(--warn);border-color:var(--warn);color:var(--warnInk)}
+.alert.now{background:var(--now);border-color:var(--now);color:#fff}
+@media (prefers-reduced-motion:no-preference){.alert.soon{animation:pulse 1s ease-in-out infinite}}
+@keyframes pulse{50%{transform:scale(1.012)}}
+.alert-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.alert-title{font:800 1.25rem var(--display);text-transform:uppercase;letter-spacing:.05em}
+.count{font:800 2.4rem/1 var(--display)}
+.moves{display:flex;flex-direction:column;gap:8px}
+.mv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center;background:rgba(255,255,255,.75);color:var(--ink);border-radius:12px;padding:10px 12px}
+.alert:not(.soon):not(.now) .mv{background:var(--chip)}
+.tag{font:800 .85rem var(--display);text-transform:uppercase;letter-spacing:.06em;border-radius:6px;padding:2px 8px;color:#fff;text-align:center;min-width:64px}
+.tag.in{background:var(--in)}.tag.out{background:var(--out)}.tag.mvv{background:var(--move)}
+.who{font:800 1.5rem/1.05 var(--display);text-transform:uppercase;letter-spacing:.02em}
+.who small{font:600 .95rem var(--body);text-transform:none;letter-spacing:0;color:var(--muted)}
+.pos{display:inline-block;font:800 1rem var(--display);border-radius:6px;padding:0 7px;color:#fff;margin-left:6px;vertical-align:2px}
+.pos.def{background:var(--def)}.pos.dm{background:var(--dm)}.pos.mid{background:var(--mid)}.pos.att{background:var(--att)}.pos.gk{background:var(--gk)}
+.swap{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px 6px;align-items:center;background:rgba(255,255,255,.85);color:var(--ink);border-radius:14px;padding:12px}
+.alert:not(.soon):not(.now) .swap{background:var(--chip)}
+.side{display:flex;flex-direction:column;gap:2px;min-width:0;border-radius:10px;padding:8px 10px;color:#fff}
+.side.in{background:var(--in)}.side.out{background:var(--out);text-align:right}
+.side .arrow{font:700 .78rem var(--display);text-transform:uppercase;letter-spacing:.08em;opacity:.9}
+.side .big{font:800 clamp(.95rem,4.1vw,2rem)/1.05 var(--display);text-transform:uppercase;letter-spacing:.01em;overflow-wrap:normal;word-break:normal;hyphens:none}
+.swap .swapmid{font:700 .95rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.where{grid-column:1/-1;font-size:1rem}
+.note{color:var(--muted);font-size:.9rem}
+.reorg{background:rgba(255,255,255,.85);color:var(--ink);border-radius:14px;padding:10px 12px;border-left:0;display:flex;flex-direction:column;gap:6px}
+.alert:not(.soon):not(.now) .reorg{background:var(--chip)}
+.reorg-t{font:800 .9rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--move)}
+.reorg-l{font-size:1.05rem}
+.up-l div{margin:2px 0}
+.nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding-top:10px;border-top:1px solid var(--rule)}
+.nav .btn{font-size:.9rem;padding:9px 6px}
+.banner{border-radius:12px;padding:12px 14px;font-size:1.05rem;color:#fff}
+.banner.vert{background:#178a3c}.banner.jaune{background:#e9b10d;color:#3b2a00}.banner.rouge{background:#c62f2f}.banner.bless{background:#5a6b7b}
+.btn.warnb{background:#ffe8b8;color:#5a3a00}
+.live{font:700 .85rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--in)}
+.incp{border:2px solid var(--warn)}
+.inc-types,.inc-players{display:flex;flex-wrap:wrap;gap:6px}
+.inc-t[aria-pressed="true"],.inc-players .btn[aria-pressed="true"]{background:var(--turf);color:#fff}
+.mlist{display:flex;flex-wrap:wrap;gap:6px}
+.mchip{background:var(--chip);border-radius:999px;padding:2px 4px 2px 12px;font-size:.88rem;display:inline-flex;align-items:center}
+.far{display:flex;flex-direction:column;gap:18px}
+.far-top{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.far .time{font-size:clamp(5rem,18vw,14rem)}
+.far .qbadge{font-size:clamp(1.6rem,4vw,3rem)}
+.far .remain{font-size:clamp(1rem,2.4vw,1.6rem)}
+.far .alert-title{font-size:clamp(1.4rem,3vw,2.4rem)}
+.far .count{font-size:clamp(2.6rem,7vw,6rem)}
+.far .side .big{font-size:clamp(2rem,6vw,5rem)}
+.far .where,.far .reorg-l{font-size:clamp(1.1rem,2.4vw,1.8rem)}
+.far .pos{font-size:clamp(1rem,2.4vw,1.8rem);padding:0 10px}
+.far .banner{font-size:clamp(1.1rem,2.4vw,1.8rem)}
+.btn.small{font-size:.85rem;padding:7px 10px}
+.sheet{padding:12px 14px}
+.sheet-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.score{display:flex;flex-direction:column;align-items:center;line-height:1}
+.score span{font:800 2.2rem var(--display)}.score small{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.dash{font:800 1.6rem var(--display);color:var(--muted)}
+.sheet-btns{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.roles{display:flex;gap:3px}
+.role{border:1px solid var(--rule);background:var(--bg);color:var(--muted);border-radius:6px;font:700 .8rem var(--display);width:26px;height:26px;padding:0}
+.role.on{background:var(--att);border-color:var(--att);color:#fff}
+.rl{font-style:normal;background:#fff;color:#0f1d2b;border-radius:4px;padding:0 3px;margin-left:3px;font-size:.75em}
+.btn.dim{opacity:.6}
+.posed{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:180px}
+.pchip{border:0;border-radius:6px;color:#fff;font:700 .78rem var(--display);padding:3px 6px;letter-spacing:.02em}
+.pchip.def{background:var(--def)}.pchip.dm{background:var(--dm)}.pchip.mid{background:var(--mid)}.pchip.att{background:var(--att)}.pchip.gk{background:var(--gk)}
+.posed select{width:auto;min-width:0;font-size:.8rem;padding:3px 4px}
+@media (max-width:480px){.swap .swapmid{font-size:.68rem;letter-spacing:.02em}.side{padding:7px 8px}}
+/* pitch */
+.pitch{position:relative;aspect-ratio:3/4.4;max-width:100%;background:repeating-linear-gradient(180deg,var(--turf) 0 12.5%,var(--turf2) 12.5% 25%);border-radius:14px;overflow:hidden}
+.pitch .l{position:absolute;border:2px solid rgba(255,255,255,.55)}
+.pp{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;width:31%}
+.pp .dot{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font:800 .82rem var(--display);color:#fff;border:2px solid #fff}
+.pp .nm{font:700 clamp(.78rem,2.6vw,.95rem)/1.1 var(--display);text-transform:uppercase;letter-spacing:.03em;background:rgba(0,0,0,.45);color:#fff;border-radius:6px;padding:2px 6px;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp.chg .nm{background:var(--warn);color:var(--warnInk)}
+.pp select{max-width:100%;font:600 .85rem var(--body);border-radius:6px;border:0;padding:3px 4px;background:#fff;color:#0f1d2b}
+.dot.def{background:var(--def)}.dot.dm{background:var(--dm)}.dot.mid{background:var(--mid)}.dot.att{background:var(--att)}.dot.gk{background:var(--gk)}
+/* upcoming */
+.up{display:flex;flex-direction:column;gap:0}
+.up-item{display:grid;grid-template-columns:58px 1fr;gap:10px;padding:9px 0;border-top:1px solid var(--rule);font-size:.95rem}
+.up-item:first-child{border-top:0}
+.up-item.done{opacity:.4}
+.up-t{font:800 1.15rem var(--display)}
+.up-l span{display:inline-block;margin-right:10px}
+.i{color:var(--in);font-weight:700}.o{color:var(--out)}.m{color:var(--move);font-size:.88rem}
+.bench{display:flex;flex-wrap:wrap;gap:6px}
+.bench span{background:var(--chip);border-radius:999px;padding:3px 10px;font-weight:600;font-size:.9rem}
+/* coach */
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th{font:700 .72rem var(--body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:6px;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:5px 6px;border-bottom:1px solid var(--rule);vertical-align:middle}
+td input[type=text],td input[type=number],td select{width:100%;min-width:56px;border:1px solid var(--rule);border-radius:8px;padding:6px 8px;background:var(--bg)}
+td input.name{min-width:120px;font-weight:600}
+tr.absent td:not(:first-child){opacity:.45}
+.x{border:0;background:none;color:var(--muted);font-size:1.2rem;padding:4px 8px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}}
+.rules{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.rules label{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--bg);border-radius:10px;padding:8px 10px;font-size:.92rem}
+.rules input{width:70px;border:1px solid var(--rule);border-radius:8px;padding:5px 6px;background:var(--paper);text-align:right}
+.warn{background:#fff4dc;color:#5a3a00;border-radius:10px;padding:10px 12px;font-size:.92rem}
+:root:not([data-theme="light"]) .warn{}
+.ok{background:#dff5e8;color:#0b5a32;border-radius:10px;padding:10px 12px;font-size:.92rem}
+.recap td,.recap th{font-size:.9rem}
+.dev{font:700 .95rem var(--display)}
+.tl{overflow-x:auto}.tl-in{min-width:640px;display:flex;flex-direction:column;gap:3px}
+.tlr{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center;font-size:.82rem}
+.trk{position:relative;height:18px;background:var(--bg);border-radius:4px}
+.trk i{position:absolute;top:0;bottom:0;border-radius:3px;color:#fff;font:700 .72rem/18px var(--display);text-align:center;font-style:normal;overflow:hidden}
+.trk .q{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.3}
+.pin{display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px 0}
+.pin input{font:800 2rem var(--display);width:160px;text-align:center;letter-spacing:.4em;border:2px solid var(--rule);border-radius:12px;padding:8px;background:var(--paper)}
+.save{font-size:.82rem;color:var(--muted)}
+.empty{padding:30px 10px;text-align:center}
+</style>
+
+<div class="bar"><div class="bar-in">
+  <div class="brand"><span id="brandName">Banc</span><small id="sub">Plan de rotation</small></div>
+  <div class="tabs" role="group" aria-label="Mode">
+    <button id="tabMatch" aria-pressed="true">Match</button>
+    <button id="tabCoach" aria-pressed="false">Coach</button>
+  </div>
+</div></div>
+
+<main id="view"></main>
+
+<script>// Rotation solver: randomized pacing heuristic + restarts, scored on constraints.
+// Exposes buildPlan(input) -> {segs, totals, changes, warnings, score}
+(function (root) {
+  const EPS = 1e-6;
+
+  function hungarian(cost) { // square matrix, returns assignment row->col
+    const n = cost.length, INF = 1e15;
+    const u = new Array(n + 1).fill(0), v = new Array(n + 1).fill(0), p = new Array(n + 1).fill(0), way = new Array(n + 1).fill(0);
+    for (let i = 1; i <= n; i++) {
+      p[0] = i; let j0 = 0; const minv = new Array(n + 1).fill(INF), used = new Array(n + 1).fill(false);
+      do {
+        used[j0] = true; const i0 = p[j0]; let delta = INF, j1 = 0;
+        for (let j = 1; j <= n; j++) if (!used[j]) {
+          const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
+          if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
+          if (minv[j] < delta) { delta = minv[j]; j1 = j; }
+        }
+        for (let j = 0; j <= n; j++) { if (used[j]) { u[p[j]] += delta; v[j] -= delta; } else minv[j] -= delta; }
+        j0 = j1;
+      } while (p[j0] !== 0);
+      do { const j1 = way[j0]; p[j0] = p[j1]; j0 = j1; } while (j0);
+    }
+    const res = new Array(n); for (let j = 1; j <= n; j++) res[p[j] - 1] = j - 1; return res;
+  }
+
+  function canMatch(onList, posIds, can) { // Kuhn bipartite matching
+    const match = {}; // pos -> player
+    function tryP(p, seen) {
+      for (const q of posIds) {
+        if (!can[p].has(q) || seen.has(q)) continue; seen.add(q);
+        if (match[q] === undefined || tryP(match[q], seen)) { match[q] = p; return true; }
+      }
+      return false;
+    }
+    for (const p of onList) if (!tryP(p, new Set())) return false;
+    return true;
+  }
+
+  function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+
+  function changeTimes(R) {
+    const T = new Set();
+    for (let q = 0; q < R.quarters; q++) {
+      const qa = q * R.qlen;
+      if (q > 0 && R.breakChanges) T.add(+qa.toFixed(3));
+      const from = q === 0 ? R.firstChange : R.startBlock;
+      for (let m = Math.ceil(from); m <= R.qlen - R.endBlock + EPS; m += 1) T.add(+(qa + m).toFixed(3));
+    }
+    const F = R.from || 0; return [...T].filter(t => t > F + EPS && t < R.quarters * R.qlen).sort((a, b) => a - b);
+  }
+
+  function runOnce(I, rand, knobs) {
+    const { players, posIds, lineup, R, targets, locked, can, pref, gkPos } = I;
+    const END = R.quarters * R.qlen;
+    const T = I.times;
+    const on = new Map(); // player -> pos
+    for (const q of posIds) on.set(lineup[q], q);
+    const F = R.from || 0;
+    const st = {}; players.forEach(p => { st[p] = { played: 0, since: (I.since && I.since[p] !== undefined) ? I.since[p] : F, onNow: on.has(p) }; });
+    const segs = []; let last = F; const entriesAt = {};
+    let viol = 0;
+    const qStart = t => Math.floor((t + EPS) / R.qlen) * R.qlen;
+    function advance(t) {
+      if (t > last) { segs.push({ a: last, b: t, on: new Map(on) }); for (const p of on.keys()) st[p].played += t - last; last = t; }
+    }
+    for (let i = 0; i < T.length; i++) {
+      const t = T[i]; advance(t);
+      const next = i + 1 < T.length ? T[i + 1] : END;
+      const isBreak = Math.abs(t - qStart(t)) < EPS;
+      const qEnd = qStart(t) + R.qlen;
+      const remain = END - t;
+      const benchList = players.filter(p => !on.has(p));
+      const onList = [...on.keys()];
+      const need = p => (targets[p] - st[p].played) / Math.max(remain, EPS);
+      // eligibility
+      const canEnter = p => remain >= I.minS[p] - EPS && (t - st[p].since) >= R.minBench - EPS;
+      const canLeave = p => !locked.has(p) && (t - st[p].since) >= I.minS[p] - EPS;
+      const gkChangeOk = isBreak || !R.gkOnlyAtBreaks;
+      // forced
+      const forcedOut = onList.filter(p => !locked.has(p) && (next - st[p].since) > I.maxS[p] + EPS && canLeave(p));
+      const forcedIn = benchList.filter(p => {
+        if (!canEnter(p)) return false;
+        const bq = Math.max(st[p].since, qStart(t));
+        const nextOpp = Math.min(next, qEnd);
+        return (nextOpp - bq) > R.maxBench + EPS && I.fieldPlayer[p];
+      });
+      // candidates
+      const ins = [], outs = [];
+      const pairs = [];
+      const thr = knobs.thr * (0.7 + 0.6 * rand());
+      for (const b of benchList) {
+        if (!canEnter(b)) continue;
+        for (const o of onList) {
+          if (!canLeave(o)) continue;
+          let val = need(b) - need(o) + (rand() - 0.5) * knobs.noise;
+          if (forcedIn.includes(b)) val += 10;
+          if (forcedOut.includes(o)) val += 10;
+          if (st[b].played + remain < targets[b] - 0.5) val += 2; // must play rest
+          if (val > thr) pairs.push([val, b, o]);
+        }
+      }
+      pairs.sort((x, y) => y[0] - x[0]);
+      const usedB = new Set(), usedO = new Set();
+      const trial = new Set(onList);
+      for (const [val, b, o] of pairs) {
+        if (usedB.size >= R.maxEntries) break;
+        if (usedB.has(b) || usedO.has(o)) continue;
+        // gk restriction
+        const touchesGK = (can[b].has(gkPos) && !I.fieldPlayer[b]) || on.get(o) === gkPos;
+        if (touchesGK && !gkChangeOk) continue;
+        trial.delete(o); trial.add(b);
+        if (canMatch([...trial], posIds, can)) { usedB.add(b); usedO.add(o); }
+        else { trial.delete(b); trial.add(o); }
+      }
+      if (usedB.size) {
+        for (const o of usedO) { on.delete(o); st[o].since = t; }
+        for (const b of usedB) { on.set(b, null); st[b].since = t; }
+        // assign positions: hungarian with switch penalty
+        const list = [...on.keys()];
+        const C = list.map(p => posIds.map(q => {
+          if (!can[p].has(q)) return 1e9;
+          let c = pref[p][q] * knobs.prefW;
+          const prev = on.get(p); if (prev && prev !== q) c += knobs.swW;
+          return c;
+        }));
+        const asg = hungarian(C);
+        list.forEach((p, k) => on.set(p, posIds[asg[k]]));
+        entriesAt[t] = usedB.size;
+      }
+      // violations for forced not satisfied
+      for (const p of forcedIn) if (!on.has(p)) viol++;
+      for (const p of forcedOut) if (on.has(p)) viol++;
+    }
+    advance(END);
+    return { segs, played: Object.fromEntries(players.map(p => [p, st[p].played])), entriesAt, viol };
+  }
+
+  function evaluate(I, res) {
+    const { players, R, targets } = I; const END = R.quarters * R.qlen;
+    let dev = 0, v = res.viol, sw = 0, pc = 0;
+    for (const p of players) dev += Math.abs(res.played[p] - targets[p]) + Math.max(0, Math.abs(res.played[p] - targets[p]) - 2) * 4;
+    // stints & bench check
+    const iv = intervals(res.segs, players);
+    for (const p of players) {
+      for (const [a, b] of iv[p]) {
+        if (b - a < I.minS[p] - EPS && b < END - EPS) v += 1;
+        if (!I.locked.has(p) && b - a > I.maxS[p] + EPS) v += 1;
+      }
+      if (!I.fieldPlayer[p] || I.locked.has(p)) continue;
+      let t = R.from || 0; const off = [];
+      for (const [a, b] of iv[p]) { if (a > t) off.push([t, a]); t = b; }
+      if (t < END) off.push([t, END]);
+      for (const [a, b] of off) for (let q = 0; q < R.quarters; q++) {
+        const qa = q * R.qlen; if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > R.maxBench + EPS) v += 1;
+      }
+    }
+    for (let i = 1; i < res.segs.length; i++) {
+      const A = res.segs[i - 1].on, B = res.segs[i].on;
+      for (const [p, q] of B) if (A.has(p) && A.get(p) !== q) sw++;
+    }
+    for (const s of res.segs) for (const [p, q] of s.on) pc += I.pref[p][q] * (s.b - s.a);
+    const windows = Object.keys(res.entriesAt).length;
+    return v * 1000 + dev * 10 + sw * 3 + windows * 2 + pc * 0.05;
+  }
+
+  function intervals(segs, players) {
+    const iv = {}; players.forEach(p => iv[p] = []);
+    for (const s of segs) for (const p of s.on.keys()) {
+      const L = iv[p]; if (L.length && Math.abs(L[L.length - 1][1] - s.a) < EPS) L[L.length - 1][1] = s.b; else L.push([s.a, s.b]);
+    }
+    return iv;
+  }
+
+
+  // ---------- simulated annealing on on-sets per grid segment ----------
+  function anneal(I, init, rand, iters) {
+    const { players, posIds, R, targets, locked, can } = I;
+    const END = R.quarters * R.qlen;
+    const F0 = R.from || 0; const grid = [F0, ...I.times, END];
+    const nS = grid.length - 1; const dur = []; for (let s = 0; s < nS; s++) dur.push(grid[s + 1] - grid[s]);
+    const isBreak = grid.map(t => t > 0 && Math.abs(t / R.qlen - Math.round(t / R.qlen)) < EPS);
+    const qOf = s => Math.floor((grid[s] + EPS) / R.qlen);
+    const idx = {}; players.forEach((p, i) => idx[p] = i);
+    const nP = players.length;
+    // on matrix
+    const on = Array.from({ length: nS }, () => new Uint8Array(nP));
+    for (let s = 0; s < nS; s++) {
+      const mid = (grid[s] + grid[s + 1]) / 2;
+      const seg = init.segs.find(g => g.a <= mid && mid < g.b);
+      for (const p of seg.on.keys()) on[s][idx[p]] = 1;
+    }
+    const gkOnly = players.map(p => !I.fieldPlayer[p]);
+    function score() {
+      let pen = 0, windows = 0, stints = 0;
+      const entries = new Array(nS).fill(0);
+      for (let i = 0; i < nP; i++) {
+        const p = players[i]; let played = 0; let runStart = (I.since && I.since[p] !== undefined) ? I.since[p] : F0;
+        let benchStart = runStart;
+        for (let s = 0; s <= nS; s++) {
+          const v = s < nS ? on[s][i] : 0;
+          const pv = s > 0 ? on[s - 1][i] : 0;
+          if (s < nS && v) played += dur[s];
+          if (v && !pv) { // enter
+            if (s > 0) { entries[s]++; if (gkOnly[i] && !isBreak[s]) pen += 40; if (I.oneBlock.has(p)) pen += 200; }
+            if (s > 0) runStart = grid[s]; stints++;
+            // bench just ended: check bench per quarter
+            if (s > 0 && I.fieldPlayer[p] && !locked.has(p)) pen += benchPen(benchStart, grid[s]);
+          }
+          if (!v && pv) { // leave at grid[s]
+            const L = grid[s] - runStart;
+            if (L < I.minS[p] - EPS) pen += 300 + (I.minS[p] - L) * 30;
+            if (I.minFirst[p] && Math.abs(runStart - F0) < EPS && F0 === 0 && L < I.minFirst[p] - EPS) pen += 300 + (I.minFirst[p] - L) * 30;
+            if (!locked.has(p) && L > I.maxS[p] + EPS) pen += 300 + (L - I.maxS[p]) * 30;
+            if (s < nS && gkOnly[i] && !isBreak[s]) pen += 40;
+            benchStart = grid[s];
+          }
+          if (s === nS && !pv && I.fieldPlayer[p] && !locked.has(p)) pen += benchPen(benchStart, END);
+          if (s < nS && !v && pv === 1 && s > 0) {
+            // min bench before re-entry checked on enter below
+          }
+        }
+        const d = Math.abs(played - targets[p]);
+        pen += d * 8 + Math.max(0, d - 1.5) * 20;
+        if (!F0 && I.fieldPlayer[p] && targets[p] >= R.minPlay && played < R.minPlay - EPS) pen += 30 + (R.minPlay - played) * 20;
+      }
+      for (let s = 1; s < nS; s++) if (entries[s]) { windows++; if (entries[s] > R.maxEntries) pen += 300 * (entries[s] - R.maxEntries); }
+      return pen + windows * 3 + stints * 3 + sumSeg();
+    }
+    function benchPen(a, b) {
+      let pen = 0;
+      if (b - a < R.minBench - EPS && a > F0 + EPS && b < END) pen += 150;
+      for (let q = 0; q < R.quarters; q++) {
+        const qa = q * R.qlen; const ov = Math.min(b, qa + R.qlen) - Math.max(a, qa);
+        if (ov > R.maxBench + EPS) pen += 300 + (ov - R.maxBench) * 30;
+      }
+      return pen;
+    }
+    function segCostOf(s) {
+      const list = []; for (let i = 0; i < nP; i++) if (on[s][i]) list.push(players[i]);
+      if (!canMatch(list, posIds, can)) return Infinity;
+      const C = list.map(p => posIds.map(q => can[p].has(q) ? I.pref[p][q] : 1e6));
+      const asg = hungarian(C); let c = 0; list.forEach((p, k) => c += C[k][asg[k]]);
+      let miss = 0;
+      for (const r of I.rolesAvail) if (!list.some(p => I.roles[p] && I.roles[p].includes(r))) miss++;
+      return c * dur[s] * 3 + miss * dur[s] * 150;
+    }
+    const segCost = []; for (let s = 0; s < nS; s++) segCost.push(segCostOf(s));
+    const sumSeg = () => segCost.reduce((a, b) => a + b, 0);
+    let cur = score(), best = cur; let bestOn = on.map(r => r.slice());
+    const free = players.map((p, i) => i).filter(i => !locked.has(players[i]));
+    const T0 = 40, T1 = 0.3;
+    let lastEntry = 1; for (let s = 1; s < nS; s++) if (grid[s] <= END - R.minStint + EPS) lastEntry = s;
+    for (let k = 0; k < iters; k++) {
+      const temp = T0 * Math.pow(T1 / T0, k / iters);
+      const s0 = 1 + Math.floor(rand() * (lastEntry));
+      const len = rand() < 0.5 ? 1 : 1 + Math.floor(rand() * 6);
+      let s1 = Math.min(nS - 1, s0 + len - 1);
+      if (s1 + 1 < nS && grid[s1 + 1] > END - R.minStint + EPS) s1 = nS - 1;
+      // choose x on in all segs, y off in all segs
+      const xs = free.filter(i => { for (let s = s0; s <= s1; s++) if (!on[s][i]) return false; return true; });
+      const ys = free.filter(i => { for (let s = s0; s <= s1; s++) if (on[s][i]) return false; return true; });
+      if (!xs.length || !ys.length) continue;
+      const x = xs[Math.floor(rand() * xs.length)], y = ys[Math.floor(rand() * ys.length)];
+      for (let s = s0; s <= s1; s++) { on[s][x] = 0; on[s][y] = 1; }
+      const oldC = []; let ok = true;
+      for (let s = s0; s <= s1; s++) { oldC.push(segCost[s]); segCost[s] = segCostOf(s); if (segCost[s] === Infinity) ok = false; }
+      let nw = ok ? score() : Infinity;
+      if (ok && (nw <= cur || rand() < Math.exp((cur - nw) / temp))) {
+        cur = nw; if (cur < best) { best = cur; bestOn = on.map(r => r.slice()); }
+      } else { for (let s = s0; s <= s1; s++) { on[s][x] = 1; on[s][y] = 0; segCost[s] = oldC[s - s0]; } }
+    }
+    // rebuild segs with positions (sequential hungarian, switch penalty)
+    const segs = []; let prev = new Map(); for (const q of posIds) prev.set(I.lineup[q], q);
+    const entriesAt = {};
+    for (let s = 0; s < nS; s++) {
+      const list = []; for (let i = 0; i < nP; i++) if (bestOn[s][i]) list.push(players[i]);
+      let m;
+      if (s === 0) m = new Map(prev);
+      else {
+        const C = list.map(p => posIds.map(q => {
+          if (!can[p].has(q)) return 1e9;
+          let c = I.pref[p][q] * 2; const pq = prev.get(p);
+          if (pq !== undefined && pq !== q) c += 6; return c;
+        }));
+        const asg = hungarian(C); m = new Map(); list.forEach((p, k) => m.set(p, posIds[asg[k]]));
+        const ent = list.filter(p => !prev.has(p)).length; if (ent) entriesAt[grid[s]] = ent;
+      }
+      const lastSeg = segs[segs.length - 1];
+      if (lastSeg && sameMap(lastSeg.on, m)) lastSeg.b = grid[s + 1];
+      else segs.push({ a: grid[s], b: grid[s + 1], on: m });
+      prev = m;
+    }
+    const played = {}; players.forEach(p => played[p] = 0);
+    for (const sg of segs) for (const p of sg.on.keys()) played[p] += sg.b - sg.a;
+    return { segs, played, entriesAt, viol: 0, saScore: best };
+  }
+  function sameMap(a, b) { if (a.size !== b.size) return false; for (const [k, v] of a) if (b.get(k) !== v) return false; return true; }
+
+  function buildPlan(input) {
+    const { positions, players: P, lineup, rules: R, seed } = input;
+    const posIds = positions.map(p => p.id);
+    const gkPos = positions.find(p => p.gk)?.id;
+    const END = R.quarters * R.qlen;
+    const players = P.map(p => p.name);
+    const can = {}, pref = {}, fieldPlayer = {};
+    P.forEach(p => {
+      can[p.name] = new Set(p.pos.filter(q => posIds.includes(q)));
+      pref[p.name] = {}; p.pos.forEach((q, i) => pref[p.name][q] = Math.pow(i, 1.5));
+      fieldPlayer[p.name] = p.pos.some(q => q !== gkPos);
+    });
+    const locked = new Set(P.filter(p => p.locked).map(p => p.name));
+    const targets = {}; P.forEach(p => targets[p.name] = p.target);
+    const warnings = [];
+    for (const q of posIds) if (!lineup[q]) warnings.push(`Le poste ${q} n'a pas de titulaire.`);
+    const starters = Object.values(lineup);
+    if (new Set(starters).size !== starters.length) warnings.push('Un joueur est titulaire à deux postes.');
+    for (const q of posIds) if (lineup[q] && !can[lineup[q]]?.has(q)) warnings.push(`${lineup[q]} n'a pas le poste ${q} dans sa liste.`);
+    if (warnings.length) return { warnings, error: true };
+    // allow starters at their starting post
+    for (const q of posIds) can[lineup[q]].add(q), pref[lineup[q]][q] ??= 3;
+    for (const p of players) if (!can[p].size) warnings.push(`${p} n'a aucun poste valide dans ce système.`);
+    const oneBlock = new Set(P.filter(p => p.oneBlock).map(p => p.name));
+    const roles = {}; P.forEach(p => roles[p.name] = p.roles || []);
+    const minFirst = {}; P.forEach(p => { if (p.minFirst) minFirst[p.name] = p.minFirst; });
+    const minS = {}; P.forEach(p => minS[p.name] = Math.max(R.minStint, p.minStint || 0));
+    const rolesAvail = [...new Set(P.flatMap(p => (p.roles || [])))];
+    const maxS = {}; P.forEach(p => maxS[p.name] = p.oneBlock ? END : Math.max(R.minStint, p.minStint || 0, p.maxStint || R.maxStint));
+    const I = { players, posIds, lineup, R, targets, locked, can, pref, gkPos, fieldPlayer, maxS, oneBlock, roles, rolesAvail, minFirst, minS, since: input.since || null, times: changeTimes(R) };
+    const rand = rng(seed || 12345);
+    let best = null, bestScore = Infinity;
+    const iters = input.iters || 300;
+    for (let k = 0; k < iters; k++) {
+      const knobs = { thr: 0.05 + rand() * 0.5, noise: rand() * 0.4, prefW: 1 + rand() * 3, swW: 2 + rand() * 6 };
+      const res = runOnce(I, rand, knobs);
+      const sc = evaluate(I, res);
+      if (sc < bestScore) { bestScore = sc; best = res; }
+    }
+    const start = best; let bestSA = null;
+    for (let c = 0; c < (input.chains || 3); c++) {
+      const sa = anneal(I, start, rand, input.saIters || 30000);
+      if (!bestSA || sa.saScore < bestSA.saScore) bestSA = sa;
+    }
+    best = bestSA; bestScore = bestSA.saScore;
+    // build outputs
+    const segs = best.segs.map(s => ({ a: s.a, b: s.b, on: Object.fromEntries(s.on) }));
+    const changes = [];
+    for (let i = 1; i < segs.length; i++) {
+      const A = segs[i - 1].on, B = segs[i].on;
+      const ins = Object.keys(B).filter(p => !(p in A)).map(p => [p, B[p]]);
+      const outs = Object.keys(A).filter(p => !(p in B)).map(p => [p, A[p]]);
+      const moves = Object.keys(B).filter(p => p in A && A[p] !== B[p]).map(p => [p, A[p], B[p]]);
+      if (ins.length || moves.length) changes.push({ t: segs[i].a, ins, outs, moves });
+    }
+    const iv = intervals(best.segs, players);
+    const check = [];
+    for (const p of players) for (const [a, b] of iv[p]) {
+      if (b - a < I.minS[p] - EPS && b < END - EPS) check.push(`${p} : passage de moins de ${I.minS[p]}'`);
+      if (!locked.has(p) && b - a > I.maxS[p] + EPS) check.push(`${p} : passage de plus de ${I.maxS[p]}'`);
+    }
+    for (const p of players) {
+      if (!fieldPlayer[p] || locked.has(p)) continue;
+      let t = R.from || 0; const off = [];
+      for (const [a, b] of iv[p]) { if (a > t) off.push([t, a]); t = b; }
+      if (t < END) off.push([t, END]);
+      for (const [a, b] of off) for (let q = 0; q < R.quarters; q++) {
+        const qa = q * R.qlen; if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > R.maxBench + EPS) check.push(`${p} : plus de ${R.maxBench}' sur le banc au Q${q + 1}`);
+      }
+    }
+    for (const [t, n] of Object.entries(best.entriesAt)) if (n > R.maxEntries) check.push(`Trop d'entrées à ${t}'`);
+    check.push(...roleGaps(best.segs.map(s => ({ a: s.a, b: s.b, on: Object.fromEntries(s.on) })), roles, rolesAvail));
+    for (const p of players) if (Math.abs(best.played[p] - targets[p]) > 2.5) check.push(`${p} : ${fmtMin(best.played[p])} au lieu de ${fmtMin(targets[p])}`);
+    return { segs, changes, played: best.played, targets, intervals: iv, warnings: [...warnings, ...check], score: bestScore };
+  }
+  function fmtMin(m) { const mm = Math.floor(m + EPS), ss = Math.round((m - mm) * 60); return ss ? `${mm}'${String(ss).padStart(2, '0')}` : `${mm}'`; }
+
+  // minutes from notes: note 5 = full, others linear from 35 (note 2)
+  function targetsFromNotes(P, fieldSlots, END) {
+    const out = {};
+    const free = P.filter(p => !p.override && !(p.note >= 5));
+    let fixed = 0;
+    P.forEach(p => {
+      if (p.override) out[p.name] = p.override;
+      else if (p.note >= 5) out[p.name] = END;
+    });
+    P.filter(p => p.field).forEach(p => { if (out[p.name] !== undefined) fixed += out[p.name]; });
+    const freeField = free.filter(p => p.field);
+    const budget = fieldSlots * END - fixed;
+    const base = END / 2;
+    const sumd = freeField.reduce((s, p) => s + (p.note - 2), 0);
+    let k = sumd > 0 ? (budget - base * freeField.length) / sumd : 0;
+    freeField.forEach(p => out[p.name] = base + k * (p.note - 2));
+    if (sumd === 0 && freeField.length) freeField.forEach(p => out[p.name] = budget / freeField.length);
+    free.filter(p => !p.field).forEach(p => out[p.name] = 0);
+    return { targets: out, k, budget };
+  }
+
+
+  const ROLE_NAMES = { D: "donneur", B: "bloqueur" };
+  function roleGaps(segs, roles, avail) {
+    const out = [];
+    for (const r of avail) {
+      let start = null;
+      for (const s of segs) {
+        const ok = Object.keys(s.on).some(p => roles[p] && roles[p].includes(r));
+        if (!ok && start === null) start = s.a;
+        if (ok && start !== null) { out.push(`Pas de ${ROLE_NAMES[r] || r} sur le terrain de ${fmtMin(start)} à ${fmtMin(s.a)}`); start = null; }
+      }
+      if (start !== null) out.push(`Pas de ${ROLE_NAMES[r] || r} sur le terrain à partir de ${fmtMin(start)}`);
+    }
+    return out;
+  }
+  // ---------- re-plan after an incident ----------
+  function replan(plan, o) {
+    // o: {T, positions, players:[{name,pos,target,locked,oneBlock,maxStint}], rules, out:[names], vacate:[posIds], freezeUntil, freezeOut:[names], adjust:{name:+-min}, seed}
+    const END = o.rules.quarters * o.rules.qlen;
+    const T = o.T, T1 = o.freezeUntil || T;
+    const segAt = t => plan.segs.find(s => s.a <= t + EPS && t < s.b - EPS) || plan.segs[plan.segs.length - 1];
+    const prefix = [];
+    for (const s of plan.segs) { if (s.a >= T - EPS) break; prefix.push({ a: s.a, b: Math.min(s.b, T), on: { ...s.on } }); }
+    const cur = { ...segAt(T).on };
+    const outSet = new Set(o.out || []);
+    let startOn = { ...cur };
+    if (T1 > T + EPS) { // frozen period with players temporarily off (cards)
+      const fr = { ...cur }; (o.freezeOut || []).forEach(p => delete fr[p]);
+      prefix.push({ a: T, b: T1, on: fr });
+    }
+    outSet.forEach(p => delete startOn[p]);
+    if (o.swap) { const q = startOn[o.swap.out]; delete startOn[o.swap.out]; startOn[o.swap.in] = o.swap.pos || q; }
+    const vac = new Set(o.vacate || []);
+    for (const [p, q] of Object.entries(startOn)) if (vac.has(q)) delete startOn[p];
+    const positions = o.positions.filter(p => !vac.has(p.id));
+    const posIds = positions.map(p => p.id);
+    // played so far & since
+    const played = {}, since = {};
+    o.players.forEach(p => { played[p.name] = 0; since[p.name] = 0; });
+    for (const s of prefix) for (const p in s.on) if (played[p] !== undefined) played[p] += s.b - s.a;
+    o.players.forEach(p => {
+      let last = 0, prevOn = null;
+      for (const s of prefix) { const on = p.name in s.on; if (prevOn !== null && on !== prevOn) last = s.a; prevOn = on; }
+      const onAtStart = p.name in startOn;
+      if (prevOn !== null && onAtStart !== prevOn) last = T1;
+      since[p.name] = last;
+    });
+    const avail = o.players.filter(p => !outSet.has(p.name));
+    const remCap = (posIds.length - posIds.filter(q => positions.find(x => x.id === q).gk).length) * (END - T1);
+    const rem = {};
+    avail.forEach(p => rem[p.name] = Math.max(0, p.target + ((o.adjust || {})[p.name] || 0) - played[p.name]));
+    const field = avail.filter(p => p.pos.some(q => q !== 'G'));
+    const fixedP = field.filter(p => p.locked || (p.oneBlock && p.name in startOn));
+    fixedP.forEach(p => rem[p.name] = Math.min(rem[p.name] || 0, END - T1) || (p.locked ? END - T1 : rem[p.name]));
+    const flex = field.filter(p => !fixedP.includes(p));
+    const fixedSum = fixedP.reduce((a, p) => a + rem[p.name], 0);
+    const flexSum = flex.reduce((a, p) => a + rem[p.name], 0);
+    const k = flexSum > 0 ? (remCap - fixedSum) / flexSum : 1;
+    flex.forEach(p => rem[p.name] = Math.max(0, Math.min(END - T1, rem[p.name] * k)));
+    // fill empty positions
+    const canP = {}; avail.forEach(p => canP[p.name] = new Set(p.pos.filter(q => posIds.includes(q))));
+    let onList = Object.keys(startOn);
+    const bench = avail.map(p => p.name).filter(n => !onList.includes(n)).sort((a, b) => (rem[b] - rem[a]));
+    while (onList.length < posIds.length) {
+      const c = bench.find(b => canMatch([...onList, b], posIds, canP));
+      if (!c) break; onList.push(c); bench.splice(bench.indexOf(c), 1);
+    }
+    if (!canMatch(onList, posIds, canP)) return { error: true, warnings: [o.swap ? `Avec ${o.swap.in} à la place de ${o.swap.out}, impossible de placer tout le monde à un poste qu'il sait jouer. Choisis un autre remplaçant.` : "Impossible de placer tout le monde à un poste qu'il sait jouer."] };
+    const C = onList.map(p => posIds.map(q => canP[p].has(q) ? (startOn[p] && startOn[p] !== q ? 10 : 0) + (avail.find(x => x.name === p).pos.indexOf(q)) : 1e9));
+    const asg = hungarian(C); const lineup = {}; onList.forEach((p, i) => lineup[posIds[asg[i]]] = p);
+    if (Object.keys(lineup).length < posIds.length) return { error: true, warnings: ["Impossible de compléter l'équipe avec les joueurs disponibles."] };
+    const sub = buildPlan({ positions, players: avail.map(p => ({ name: p.name, pos: p.pos, target: rem[p.name], locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint })), lineup, rules: { ...o.rules, from: T1 }, since, seed: o.seed || 7, iters: 150, saIters: o.saIters || 35000, chains: 3 });
+    if (sub.error) return sub;
+    const segs = prefix.concat(sub.segs);
+    const merged = []; for (const s of segs) { const L = merged[merged.length - 1]; if (L && Math.abs(L.b - s.a) < EPS && JSON.stringify(L.on) === JSON.stringify(s.on)) L.b = s.b; else merged.push({ a: s.a, b: s.b, on: { ...s.on } }); }
+    const res = finalize(merged, o.players, Object.fromEntries(o.players.map(p => [p.name, p.target + ((o.adjust || {})[p.name] || 0)])), [], plan.events || []);
+    const hit = new Set([...(o.out || []), ...(o.freezeOut || [])]);
+    const maxOf = n => { const p = o.players.find(x => x.name === n); return p.oneBlock || p.locked ? END : Math.max(o.rules.minStint, p.maxStint || o.rules.maxStint); };
+    for (const n in res.intervals) for (const [a, b] of res.intervals[n]) {
+      if (b <= T1 + EPS && a < T - EPS) continue;
+      if (hit.has(n) && (Math.abs(b - T) < EPS)) continue;
+      const mn = Math.max(o.rules.minStint, (o.players.find(x => x.name === n) || {}).minStint || 0);
+      if (b - a < mn - EPS && b < END - EPS) res.warnings.push(`${n} : passage de moins de ${mn}'`);
+      if (b - a > maxOf(n) + EPS) res.warnings.push(`${n} : passage de plus de ${maxOf(n)}'`);
+    }
+    const rl = {}; o.players.forEach(p => rl[p.name] = p.roles || []);
+    res.warnings.push(...roleGaps(merged.filter(s => s.b > T1 + EPS), rl, [...new Set(avail.flatMap(p => p.roles || []))]));
+    return res;
+  }
+  function finalize(segs, players, targets, warnings, events) {
+    const changes = [];
+    for (let i = 1; i < segs.length; i++) {
+      const A = segs[i - 1].on, B = segs[i].on;
+      const ins = Object.keys(B).filter(p => !(p in A)).map(p => [p, B[p]]);
+      const outs = Object.keys(A).filter(p => !(p in B)).map(p => [p, A[p]]);
+      const moves = Object.keys(B).filter(p => p in A && A[p] !== B[p]).map(p => [p, A[p], B[p]]);
+      if (ins.length || moves.length || outs.length) changes.push({ t: segs[i].a, ins, outs, moves });
+    }
+    const played = {}; players.forEach(p => played[p.name] = 0);
+    for (const s of segs) for (const p in s.on) if (played[p] !== undefined) played[p] += s.b - s.a;
+    const iv = {}; players.forEach(p => iv[p.name] = []);
+    for (const s of segs) for (const p in s.on) { const L = iv[p]; if (!L) continue; if (L.length && Math.abs(L[L.length - 1][1] - s.a) < EPS) L[L.length - 1][1] = s.b; else L.push([s.a, s.b]); }
+    return { segs, changes, played, targets, intervals: iv, warnings: warnings || [], events, score: 0 };
+  }
+
+  root.Rotation = { buildPlan, targetsFromNotes, fmtMin, changeTimes, replan, roleGaps };
+  if (typeof module !== 'undefined') module.exports = root.Rotation;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+const R = window.Rotation;
+const SEED = {"dataVersion":6,"teamName":"","squad":[],"lineup":{},"preset":"3-2-3-2","plan":null,"pin":"","sheet":{"us":[],"them":[],"pc":0,"log":[]}};
+const PRESETS = {
+  "3-2-3-2": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",34,63,"MDG"],["5","Milieu déf. droit","dm",66,63,"MDD"],["6","Milieu gauche","mid",17,44,"MG"],["7","Milieu off.","mid",50,46,"MO"],["8","Milieu droit","mid",83,44,"MD"],["9","Avant gauche","att",34,20,"AG"],["10","Avant droit","att",66,20,"AD"]],
+  "4-3-3": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu déf.","dm",50,60,"MDF"],["6","Milieu gauche","mid",26,46,"MG"],["7","Milieu droit","mid",74,46,"MD"],["8","Avant gauche","att",18,22,"AG"],["9","Avant centre","att",50,16,"AC"],["10","Avant droit","att",82,22,"AD"]],
+  "4-4-2": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu gauche","mid",14,48,"MG"],["6","Milieu axial gauche","dm",38,54,"MAG"],["7","Milieu axial droit","dm",62,54,"MAD"],["8","Milieu droit","mid",86,48,"MD"],["9","Avant gauche","att",36,20,"AG"],["10","Avant droit","att",64,20,"AD"]],
+  "3-3-3-1": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",22,62,"MDG"],["5","Milieu déf. axe","dm",50,64,"MDA"],["6","Milieu déf. droit","dm",78,62,"MDD"],["7","Milieu off. gauche","mid",22,40,"MOG"],["8","Milieu off. axe","mid",50,42,"MOA"],["9","Milieu off. droit","mid",78,40,"MOD"],["10","Avant centre","att",50,17,"AC"]]
+};
+const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:6,startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6};
+const RULE_LABELS = [["qlen","Durée d'un quart (min)",0.5],["firstChange","Q1 : premier changement après (min)",1],["startBlock","Rien dans les premières (min) d'un quart",1],["endBlock","Rien dans les dernières (min) d'un quart",1],["minDef","Passage minimum défenseurs (min)",1],["minMid","Passage minimum milieux (min)",1],["minAtt","Passage minimum attaquants (min)",1],["maxStint","Passage maximum (min)",1],["maxBench","Banc maximum par quart (min)",1],["maxEntries","Entrées max en même temps",1],["minPlay","Temps de jeu minimum (min)",1],["alertSec","Alerte avant changement (s)",5]];
+
+let S = {squad:[],preset:"3-2-3-2",lineup:{},rules:{...DEFAULT_RULES},plan:null,pin:""};
+let mode = "match", coachOK = false, preview = null, seedN = 1;
+const SID = Math.random().toString(36).slice(2);
+let liveRef = null, liveOK = false, liveBusy = false, liveAgain = false;
+let inc = null, incBusy = false, incMsg = "";
+let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
+let season = null, seasonMsg = "";
+let db = null, docRef = null, saveTimer = null, saving = false, saveAgain = false, saveState = "";
+let C = loadClock();
+
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const posMeta = id => { const p = PRESETS[S.preset].find(x => x[0] === id); return p ? {id:p[0],label:p[1],line:p[2],x:p[3],y:p[4],short:p[5]||p[0]} : {id,label:id,line:"mid",x:50,y:50,short:id}; };
+const posName = id => posMeta(id).label;
+const posShort = id => posMeta(id).short;
+const fmtClock = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`; };
+const fmtQ = t => { const ql = S.rules.qlen; const q = Math.min(S.rules.quarters, Math.floor(t/ql + 1e-6) + 1); const m = t - (q-1)*ql; return {q, m, label: R.fmtMin(m)}; };
+
+/* ---------- storage ---------- */
+function applyData(v){ v = JSON.parse(JSON.stringify(v)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules:{...DEFAULT_RULES, ...(v.rules||{})}}; }
+function loadLocal(){ let v = null; try { v = JSON.parse(localStorage.getItem("banc-state") || "null"); } catch(e){} applyData(v || SEED); }
+function saveLocal(){ try { localStorage.setItem("banc-state", JSON.stringify(S)); } catch(e){} }
+function loadClock(){ try { return JSON.parse(localStorage.getItem("banc-clock") || "null") || {q:1,elapsed:0,running:false,startedAt:0,done:[]}; } catch(e){ return {q:1,elapsed:0,running:false,startedAt:0,done:[]}; } }
+function saveClock(){ try { localStorage.setItem("banc-clock", JSON.stringify(C)); } catch(e){} }
+function pushClock(){
+  saveClock();
+  if (!liveRef) return;
+  (async function go(){
+    if (liveBusy) { liveAgain = true; return; }
+    liveBusy = true;
+    try { await liveRef.set({...JSON.parse(JSON.stringify(C)), by: SID, at: Date.now()}); } catch(e){}
+    liveBusy = false; if (liveAgain) { liveAgain = false; go(); }
+  })();
+}
+function persist(){
+  saveLocal();
+  if (!docRef) return;
+  clearTimeout(saveTimer); saveState = "Enregistrement…"; paintSave();
+  saveTimer = setTimeout(async function go(){
+    if (saving) { saveAgain = true; return; }
+    saving = true;
+    try { S._by = SID; await docRef.set(JSON.parse(JSON.stringify(S))); saveState = "Enregistré"; }
+    catch(e){ saveState = "Enregistré sur cet appareil seulement"; }
+    saving = false; paintSave();
+    if (saveAgain) { saveAgain = false; go(); }
+  }, 800);
+}
+function teamTitle(){ return S.teamName ? `Banc ${S.teamName}` : "Banc"; }
+const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
+function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = teamTitle();
+ const el = $("#sub"); if (el) el.innerHTML = (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
+function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveState; }
+
+/* ---------- plan helpers ---------- */
+function minStintOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? +S.rules.minDef : (l === "dm" || l === "mid") ? +S.rules.minMid : l === "att" ? +S.rules.minAtt : 0; }
+function matchTitle(){
+  const parts = [];
+  if (S.matchLabel) parts.push(S.matchLabel);
+  if (S.matchDate) { try { const d = new Date(S.matchDate + "T12:00:00"); parts.push(d.toLocaleDateString("fr-BE", {weekday:"long", day:"numeric", month:"long"})); } catch(e){ parts.push(S.matchDate); } }
+  return parts.join(" · ");
+}
+function present(){ return S.squad.filter(p => p.present && p.name.trim()); }
+function computeTargets(){
+  const END = S.rules.quarters * S.rules.qlen;
+  const ids = PRESETS[S.preset].map(p => p[0]);
+  const gk = ids[0];
+  const P = present().map(p => ({name:p.name, note:+p.note, override: p.minutes ? +p.minutes : 0, field: p.pos.some(q => q !== gk)}));
+  return R.targetsFromNotes(P, ids.length - 1, END).targets;
+}
+function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); }
+function generate(seed){
+  syncMinStint();
+  const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
+  const T = computeTargets();
+  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: (+p.note >= 5 && !p.minutes), oneBlock: +p.note >= 5, maxStint: p.maxStint ? +p.maxStint : 0, roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
+  let best = null;
+  for (let k = 0; k < 3; k++) {
+    const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
+    if (p.error) return p;
+    if (!best || p.warnings.length < best.warnings.length || (p.warnings.length === best.warnings.length && p.score < best.score)) best = p;
+    if (!best.warnings.length) break;
+  }
+  return best;
+}
+let _vcPlan = null, _vc = [];
+function visChanges(plan){
+  if (!plan) return [];
+  if (plan === _vcPlan) return _vc;
+  const ev = (plan.events||[]);
+  _vc = plan.changes.map(c => {
+    const skip = new Set();
+    ev.forEach(e => {
+      if ((e.type==="vert"||e.type==="jaune") && (Math.abs(c.t-e.t)<1e-6 || Math.abs(c.t-(e.t+e.d))<1e-6)) skip.add(e.player);
+      if (e.type==="rouge" && Math.abs(c.t-e.t)<1e-6) skip.add(e.player);
+    });
+    if (!skip.size) return c;
+    const c2 = {...c, ins:c.ins.filter(x=>!skip.has(x[0])), outs:c.outs.filter(x=>!skip.has(x[0]))};
+    return (c2.ins.length||c2.outs.length||c2.moves.length) ? c2 : null;
+  }).filter(Boolean);
+  _vcPlan = plan; return _vc;
+}
+function segAt(plan, t){ return plan.segs.find(s => s.a <= t + 1e-6 && t < s.b - 1e-6) || plan.segs[plan.segs.length-1]; }
+
+/* ---------- clock ---------- */
+function clockElapsed(){ return C.running ? Math.min(S.rules.qlen*60, C.elapsed + (Date.now() - C.startedAt)/1000) : C.elapsed; }
+function matchT(){ return (C.q-1)*S.rules.qlen + clockElapsed()/60; }
+let wake = null;
+async function wakeOn(){ try { wake = await navigator.wakeLock?.request("screen"); } catch(e){} }
+function startClock(){ if (C.running) return; C.running = true; C.startedAt = Date.now(); pushClock(); wakeOn(); unlockAudio(); render(); }
+function pauseClock(){ if (!C.running) return; C.elapsed = clockElapsed(); C.running = false; pushClock(); render(); }
+function syncDone(){
+  const ql = S.rules.qlen, T = (C.q-1)*ql + C.elapsed/60;
+  C.done = visChanges(S.plan).filter(c => c.t < T - 0.001 || (C.q > 1 && Math.abs(c.t - (C.q-1)*ql) < 1e-6)).map(c => c.t);
+  lastAlertKey = "";
+}
+function setClock(q, sec){ C.q = Math.max(1, Math.min(S.rules.quarters, q)); C.elapsed = Math.max(0, Math.min(S.rules.qlen*60, sec)); if (C.running) C.startedAt = Date.now(); syncDone(); pushClock(); render(); }
+function adjust(sec){ setClock(C.q, clockElapsed() + sec); }
+function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; setClock(C.q + 1, 0); }
+function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; persist(); pushClock(); render(); }
+let actx = null;
+function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
+function beep(n){ if (!actx) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
+
+/* ---------- incidents ---------- */
+const INC = {bless:{label:"Blessure",icon:"🩹",d:0}, vert:{label:"Carton vert",icon:"🟩",d:2}, jaune:{label:"Carton jaune",icon:"🟨",d:5}, rouge:{label:"Carton rouge",icon:"🟥",d:0}};
+function eventsOf(){ return (S.plan && S.plan.events) || []; }
+function outForGood(){ return eventsOf().filter(e => e.type==="bless" || e.type==="rouge").map(e => e.player); }
+function doIncident(){
+  const T = Math.floor(matchT()*10)/10;
+  const type = inc.type, p = inc.player, info = INC[type] || {d:0};
+  const positions = PRESETS[S.preset].map(x => ({id:x[0], gk:x[2]==="gk"}));
+  const Tg = computeTargets();
+  const players = present().map(x => ({name:x.name, pos:x.pos, target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(+x.note>=5 && !x.minutes), oneBlock: +x.note>=5, maxStint: x.maxStint ? +x.maxStint : 0, roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const seg = segAt(S.plan, T);
+  const prevVac = eventsOf().filter(e => e.type==="rouge").map(e => e.pos);
+  const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: prevVac.slice(), seed: Date.now()%100000, adjust: {}};
+  if (type === "libre") o.swap = {out: p, in: inc.inP, pos: inc.pos || null};
+  if (type === "bless") o.out.push(p);
+  if (type === "rouge") { o.out.push(p); o.vacate.push(seg.on[p]); }
+  if (type === "vert" || type === "jaune") { o.freezeUntil = Math.min(S.rules.quarters*S.rules.qlen, T + info.d); o.freezeOut = [p]; if (!inc.catchUp) o.adjust[p] = -info.d; }
+  // keep earlier adjustments
+  eventsOf().forEach(e => { if ((e.type==="vert"||e.type==="jaune") && !e.catchUp) o.adjust[e.player] = (o.adjust[e.player]||0); });
+  const res = R.replan(S.plan, o);
+  if (res.error) { incMsg = res.warnings.join(" "); incBusy = false; render(); return; }
+  res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
+  S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = "";
+  syncDone(); pushClock(); persist(); render();
+}
+function activeBanners(t){
+  const out = [];
+  eventsOf().forEach(e => {
+    const i = INC[e.type];
+    if ((e.type==="vert"||e.type==="jaune") && t >= e.t - 1e-6 && t < e.t + e.d) out.push(`<div class="banner ${e.type}"><b>${i.icon} ${esc(i.label)} : ${esc(e.player)}</b> exclu, on joue à 10. Retour dans <span data-until="${e.t+e.d}">${fmtClock((e.t+e.d-t)*60)}</span></div>`);
+    if (e.type==="rouge" && t >= e.t - 1e-6) out.push(`<div class="banner rouge"><b>🟥 Carton rouge : ${esc(e.player)}</b> exclu jusqu'à la fin, on joue à 10.</div>`);
+    if (e.type==="bless" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner bless"><b>🩹 ${esc(e.player)} blessé</b> : le plan a été recalculé sans lui.</div>`);
+  });
+  return out.join("");
+}
+function swapPanel(seg){
+  if (!inc || inc.type !== "libre") return "";
+  const onField = Object.keys(seg.on).filter(n => !/G/.test(seg.on[n]) || n === inc.player);
+  const outQ = inc.player ? seg.on[inc.player] : null;
+  const canQ = n => outQ && (S.squad.find(p => p.name === n)?.pos || []).includes(outQ);
+  const bench = present().map(p=>p.name).filter(n => !(n in seg.on) && !outForGood().includes(n)).sort((a,b) => canQ(b) - canQ(a));
+  return `<div class="card incp"><h2>Changement hors plan</h2>
+    <div class="muted" style="margin:0 0 6px;font-size:.9rem">Qui sort ?</div>
+    <div class="inc-players">${onField.map(n => `<button class="btn" data-swo="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)} <small>${esc(posShort(seg.on[n]))}</small></button>`).join("")}</div>
+    <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui entre ?</div>
+    <div class="inc-players">${bench.map(n => `<button class="btn${outQ && !canQ(n) ? " dim" : ""}" data-swi="${esc(n)}" aria-pressed="${inc.inP===n}">${esc(n)}${outQ && !canQ(n) ? " <small>autre poste</small>" : ""}</button>`).join("") || '<span class="muted">Personne sur le banc</span>'}</div>
+    ${outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas en ${pill(outQ)} : les joueurs seront réorganisés.`} Le reste du plan est recalculé.</div>` : ""}
+    ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.player && inc.inP && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider"}</button><button class="btn" id="incCancel">Annuler</button></div>
+  </div>`;
+}
+function incidentPanel(seg){
+  if (inc && inc.type === "libre") return swapPanel(seg);
+  if (!inc) return "";
+  const onField = Object.keys(seg.on);
+  const card = inc.type==="vert" || inc.type==="jaune";
+  return `<div class="card incp"><h2>Imprévu</h2>
+    <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
+    <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quel joueur ?</div>
+    <div class="inc-players">${onField.map(n => `<button class="btn" data-incp="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)}</button>`).join("")}</div>
+    ${card ? `<label class="row" style="margin-top:10px;font-size:.95rem"><input type="checkbox" id="catchUp" ${inc.catchUp?"checked":""}> Rattraper le temps de la carte plus tard</label>` : ""}
+    ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
+  </div>`;
+}
+/* ---------- match sheet ---------- */
+function sheet(){ S.sheet ||= {us:[], them:[], pc:0, log:[]}; return S.sheet; }
+let scorerPick = false;
+function sheetCard(seg){
+  const sh = sheet();
+  return `<div class="card sheet"><div class="sheet-row">
+      <div class="score"><span>${sh.us.length}</span><small>nous</small></div><div class="dash">–</div><div class="score"><span>${sh.them.length}</span><small>eux</small></div>
+      <div class="sheet-btns"><button class="btn small" id="gUs">+ But nous</button><button class="btn small" id="gThem">+ But eux</button><button class="btn small" id="pcPlus">+ Corner (${sh.pc})</button>${sh.log.length ? `<button class="btn small" id="shUndo" aria-label="Annuler la dernière saisie">↶</button>` : ""}</div>
+    </div>
+    ${scorerPick ? `<div class="inc-players" style="margin-top:10px"><span class="muted" style="align-self:center;font-size:.9rem">Buteur :</span>${Object.keys(seg.on).filter(n => seg.on[n] !== "G").map(n => `<button class="btn small" data-scorer="${esc(n)}">${esc(n)}</button>`).join("")}<button class="btn small" data-scorer="">Je ne sais pas</button></div>` : ""}
+  </div>`;
+}
+function bindSheet(){
+  const sh = sheet(), t = Math.round(matchT()*10)/10;
+  const commit = () => { persist(); render(); };
+  $("#gUs")?.addEventListener("click", () => { scorerPick = !scorerPick; render(); });
+  $("#gThem")?.addEventListener("click", () => { sh.them.push({t}); sh.log.push("them"); commit(); });
+  $("#pcPlus")?.addEventListener("click", () => { sh.pc++; sh.log.push("pc"); commit(); });
+  $("#shUndo")?.addEventListener("click", () => { const k = sh.log.pop(); if (k==="us") sh.us.pop(); else if (k==="them") sh.them.pop(); else if (k==="pc") sh.pc = Math.max(0, sh.pc-1); commit(); });
+  document.querySelectorAll("[data-scorer]").forEach(b => b.addEventListener("click", () => { sh.us.push({t, player: b.dataset.scorer || null}); sh.log.push("us"); scorerPick = false; commit(); }));
+}
+/* ---------- PDF plan B ---------- */
+function loadJsPdf(){ return new Promise((ok, ko) => { if (window.jspdf) return ok(); const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"; s.onload = ok; s.onerror = ko; document.head.appendChild(s); }); }
+async function makePdf(){
+  const btn = $("#pdfB"); if (btn) { btn.disabled = true; btn.textContent = "Préparation…"; }
+  const done = msg => { if (btn) { btn.disabled = false; btn.textContent = "📄 Plan B (PDF)"; } const m = $("#pinMsg"); seasonMsg = msg; render(); };
+  try {
+    await loadJsPdf();
+    const { jsPDF } = window.jspdf; const doc = new jsPDF({unit:"mm", format:"a4"});
+    const plan = S.plan, ql = S.rules.qlen; let y = 16;
+    const line = (txt, size=10, bold=false, x=14) => { if (y > 284) { doc.addPage(); y = 16; } doc.setFont("helvetica", bold?"bold":"normal"); doc.setFontSize(size); doc.text(txt, x, y); y += size*0.45 + 1.6; };
+    line(`${teamTitle()} - plan de rotation`, 16, true);
+    line(`${matchTitle() || new Date().toLocaleDateString("fr-BE")} - ${S.preset}`, 11, true);
+    y += 2; line("Compo de départ", 12, true);
+    PRESETS[S.preset].forEach(([id,label]) => line(`${label} : ${Object.entries(plan.segs[0].on).find(([p,q]) => q===id)?.[0] || "-"}`, 10, false, 18));
+    for (let q = 1; q <= S.rules.quarters; q++) {
+      y += 3; line(`Quart ${q}`, 13, true);
+      const list = visChanges(plan).filter(c => (q > 1 && Math.abs(c.t-(q-1)*ql) < 1e-6) || (c.t > (q-1)*ql + 1e-6 && c.t < q*ql - 1e-6));
+      if (!list.length) line("Aucun changement", 10, false, 18);
+      list.forEach(c => {
+        const lab = Math.abs(c.t-(q-1)*ql) < 1e-6 ? "Pause" : fmtQ(c.t).label;
+        line(lab, 11, true, 16);
+        pairChanges(c).forEach(pr => line(`${pr.inP || "-"} remplace ${pr.outP || "-"}${pr.inQ ? "  (" + posName(pr.inQ) + ")" : ""}`, 10, false, 30));
+        c.moves.forEach(([p,a,b]) => line(`Réorganisation : ${p} passe de ${posName(a)} à ${posName(b)}`, 9, false, 30));
+      });
+    }
+    const blob = doc.output("blob");
+    const dl = await window.claude?.use?.("downloads");
+    if (!dl) return done("Le téléchargement n'est pas disponible ici. Ouvre le programme dans claude.ai.");
+    await dl.save({filename: `plan-b-${slug(S.teamName || "equipe")}.pdf`, data: blob});
+    done("Plan B téléchargé.");
+  } catch(e) { done(e && e.code === "declined" ? "Téléchargement annulé." : "Impossible de créer le PDF (connexion ?). Réessaie."); }
+}
+/* ---------- backup file ---------- */
+function exportBackup(){
+  let seasonL = []; try { seasonL = JSON.parse(localStorage.getItem("banc-season") || "[]"); } catch(e){}
+  const st = JSON.parse(JSON.stringify(S)); delete st.pin; delete st._by;
+  const data = {app:"banc-hockey", kind:"sauvegarde", version:1, savedAt:new Date().toISOString().slice(0,10), state:st, season:seasonL};
+  const blob = new Blob([JSON.stringify(data, null, 1)], {type:"application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `banc-${slug(S.teamName || "equipe")}-${data.savedAt}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  backupMsg = "Sauvegarde téléchargée. Garde ce fichier en lieu sûr (mail, Drive...)."; render();
+}
+function importBackup(file){
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const d = JSON.parse(rd.result);
+      if (d.app !== "banc-hockey" || !d.state || !Array.isArray(d.state.squad)) throw new Error("format");
+      const pin = S.pin; applyData(d.state); S.pin = pin;
+      if (Array.isArray(d.season)) localStorage.setItem("banc-season", JSON.stringify(d.season));
+      season = null; preview = null; persist();
+      backupMsg = `Sauvegarde du ${d.savedAt || "?"} rechargée : ${d.state.squad.length} joueurs.`;
+    } catch(e){ backupMsg = "Ce fichier n'est pas une sauvegarde du banc."; }
+    render();
+  };
+  rd.readAsText(file);
+}
+let backupMsg = "";
+/* ---------- season ---------- */
+let seasonLoading = false;
+async function loadSeason(){
+  if (seasonLoading) return; seasonLoading = true;
+  await new Promise(r => setTimeout(r, 0));
+  try {
+    if (db) { const qs = await db.collection("matches").get(); season = qs.docs.map(d => ({id:d.id, ...JSON.parse(JSON.stringify(d.data()))})); }
+    else { season = JSON.parse(localStorage.getItem("banc-season") || "[]"); }
+  } catch(e){ try { season = JSON.parse(localStorage.getItem("banc-season") || "[]"); } catch(_) { season = []; } }
+  seasonLoading = false;
+  season.sort((a,b) => (a.date||"").localeCompare(b.date||""));
+  if (mode==="coach") render();
+}
+async function saveMatch(){
+  const sh = sheet();
+  const rec = {date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => e.type!=="bless" && e.type!=="libre").map(e => ({type:e.type, player:e.player}))};
+  for (const [n,m] of Object.entries(S.plan.played)) rec.minutes[n] = Math.round(m*10)/10;
+  for (const [n,m] of Object.entries(S.plan.targets||{})) rec.targets[n] = Math.round(m*10)/10;
+  try {
+    if (db) await db.collection("matches").add(rec);
+    else { const L = JSON.parse(localStorage.getItem("banc-season") || "[]"); L.push({id:String(Date.now()), ...rec}); localStorage.setItem("banc-season", JSON.stringify(L)); }
+    S.plan.savedAt = Date.now(); persist(); seasonMsg = "Match enregistré dans la saison ✓";
+  } catch(e){ seasonMsg = "L'enregistrement a échoué, réessaie."; }
+  season = null; render();
+}
+async function deleteMatch(id){
+  try {
+    if (db) await db.collection("matches").doc(id).delete();
+    else { const L = JSON.parse(localStorage.getItem("banc-season") || "[]").filter(x => x.id !== id); localStorage.setItem("banc-season", JSON.stringify(L)); }
+  } catch(e){}
+  season = null; loadSeason();
+}
+function seasonHtml(){
+  if (season === null) { loadSeason(); return `<p class="muted">Chargement…</p>`; }
+  if (!season.length) return `<p class="muted">Aucun match enregistré. À la fin d'un match, touche « Enregistrer le match dans la saison » (onglet Match ou ci-dessus).</p>`;
+  const stat = {};
+  season.forEach(m => { Object.entries(m.minutes||{}).forEach(([n,v]) => { const s = stat[n] ||= {n:0,tot:0,dev:0,g:0}; s.n++; s.tot += v; s.dev += v - (m.targets?.[n] ?? v); }); (m.scorers||[]).forEach(n => { (stat[n] ||= {n:0,tot:0,dev:0,g:0}).g++; }); });
+  const rows = Object.entries(stat).sort((a,b)=>b[1].tot-a[1].tot).map(([n,s]) => {
+    const sug = s.dev <= -8 ? `<span class="i">+0,5 conseillé</span>` : s.dev >= 8 ? `<span class="o">−0,5 conseillé</span>` : `<span class="muted">—</span>`;
+    return `<tr><td>${esc(n)}</td><td>${s.n}</td><td>${s.g||""}</td><td>${R.fmtMin(s.tot)}</td><td>${R.fmtMin(s.tot/s.n)}</td><td class="dev" style="color:${Math.abs(s.dev)<8?"var(--in)":"var(--out)"}">${s.dev>=0?"+":"−"}${R.fmtMin(Math.abs(s.dev))}</td><td>${sug}</td></tr>`; }).join("");
+  const list = season.map(m => `<span class="mchip">${esc(m.date)}${m.label?` · ${esc(m.label)}`:""}${m.us!==undefined?` · <b>${m.us}–${m.them}</b>`:""} <button class="x" data-delm="${esc(m.id)}" aria-label="Supprimer ce match">✕</button></span>`).join("");
+  return `<div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Matchs</th><th>Buts</th><th>Total</th><th>Moyenne</th><th>Écart cumulé</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted" style="font-size:.85rem;margin:10px 0 6px">Écart cumulé = minutes jouées moins minutes visées, sur tous les matchs. Les cartes comptent comme du temps hors du terrain.</p><div class="mlist">${list}</div>`;
+}
+
+/* ---------- rendering ---------- */
+function render(){
+  paintSub();
+  $("#tabMatch").setAttribute("aria-pressed", mode==="match");
+  $("#tabCoach").setAttribute("aria-pressed", mode==="coach");
+  const v = $("#view");
+  if (mode === "coach" && S.pin && !coachOK) { v.innerHTML = pinView(); bindPin(); return; }
+  v.innerHTML = mode === "match" ? matchView() : coachView();
+  mode === "match" ? bindMatch() : bindCoach();
+}
+function pill(id){ const m = posMeta(id); return `<span class="pos ${m.line}" title="${esc(m.label)}">${esc(m.short)}</span>`; }
+
+function pairChanges(ch){
+  const outs = ch.outs.map(([p,q]) => ({p,q})), ins = ch.ins.map(([p,q]) => ({p,q}));
+  const pairs = [], usedO = new Set(), usedI = new Set();
+  const tryPair = test => ins.forEach((i,ii) => { if (usedI.has(ii)) return; const oi = outs.findIndex((o,k) => !usedO.has(k) && test(i,o)); if (oi >= 0) { usedI.add(ii); usedO.add(oi); pairs.push({inP:i.p, inQ:i.q, outP:outs[oi].p, outQ:outs[oi].q}); } });
+  tryPair((i,o) => i.q === o.q);
+  // chain through a mover: someone left post o.q free and moved, the newcomer takes the mover's old post
+  tryPair((i,o) => ch.moves.some(([m,a,b]) => b === o.q && a === i.q));
+  tryPair((i,o) => posMeta(i.q).line === posMeta(o.q).line);
+  tryPair(() => true);
+  outs.forEach((o,k) => { if (!usedO.has(k)) pairs.push({inP:null, outP:o.p, outQ:o.q}); });
+  ins.forEach((i,k) => { if (!usedI.has(k)) pairs.push({inP:i.p, inQ:i.q, outP:null}); });
+  return pairs;
+}
+function changeLines(ch){
+  let html = pairChanges(ch).map(pr => `<div class="swap">
+      <div class="side in"><span class="arrow">▲ Entre</span><span class="big">${esc(pr.inP || "—")}</span></div>
+      <div class="swapmid">remplace</div>
+      <div class="side out"><span class="arrow">▼ Sort</span><span class="big">${esc(pr.outP || "—")}</span></div>
+      ${pr.inP ? `<div class="where">${esc(pr.inP)} va au poste ${pill(pr.inQ)} <b>${esc(posMeta(pr.inQ).label)}</b>${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(posName(pr.outQ).toLowerCase())})</span>` : ""}</div>` : ""}
+    </div>`).join("");
+  if (ch.moves.length) html += `<div class="reorg"><div class="reorg-t">Réorganisation sur le terrain</div>${ch.moves.map(([p,a,b]) => `<div class="reorg-l"><b>${esc(p)}</b> passe de ${pill(a)} à ${pill(b)} <span class="note">${esc(posMeta(b).label)}</span></div>`).join("")}</div>`;
+  return html;
+}
+function matchView(){
+  const plan = S.plan;
+  if (!plan) return `<div class="card empty"><h2>Pas encore de plan</h2><p class="muted">Va dans l'onglet Coach : coche les présents, choisis la compo, puis génère le plan de rotation.</p><button class="btn primary" id="goCoach">Aller au mode Coach</button></div>`;
+  const ql = S.rules.qlen, el = clockElapsed(), t = matchT();
+  const atEnd = el >= ql*60 - 0.5;
+  const next = visChanges(plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.01 - 0.35);
+  const qEndT = C.q*ql;
+  let alertHtml;
+  const matchOver = atEnd && C.q >= S.rules.quarters;
+  if (!next) alertHtml = `<div class="alert"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
+  else {
+    const isBreakChange = Math.abs(next.t - qEndT) < 1e-6 && C.q < S.rules.quarters;
+    const secs = (next.t - t) * 60;
+    const when = isBreakChange ? `Pause avant le Q${C.q+1}` : `Q${fmtQ(next.t).q} · ${fmtQ(next.t).label}`;
+    let cls = "", title = "Prochain changement", count = fmtClock(secs);
+    if (isBreakChange && atEnd) { cls = "now"; title = "Changement à la pause"; count = "Pause"; }
+    else if (secs <= 0.5) { cls = "now"; title = "Changement maintenant"; count = "GO"; }
+    else if (secs <= S.rules.alertSec) { cls = "soon"; title = "Préparez-vous"; }
+    if (isBreakChange && !atEnd && secs > S.rules.alertSec) count = "À la pause";
+    alertHtml = `<div class="alert ${cls}" id="alertCard"><div class="alert-head"><div><div class="alert-title">${title}</div><div style="font-weight:600">${esc(when)}</div></div><div class="count" id="count">${esc(count)}</div></div>
+      <div class="moves">${changeLines(next)}</div>
+      ${cls==="now" ? `<button class="btn big" id="doneBtn" style="background:#fff;color:#0b5a32">Changement fait ✓</button>` : ""}</div>`;
+  }
+  const seg = segAt(plan, Math.min(t, plan.segs[plan.segs.length-1].b - 0.01));
+  const upcomingIds = next ? new Set(next.outs.map(o=>o[0]).concat(next.moves.map(m=>m[0]))) : new Set();
+  const onIds = Object.entries(seg.on);
+  const pitch = `<div class="pitch" aria-label="Joueurs sur le terrain">${pitchLines()}${PRESETS[S.preset].map(([id,label,line,x,y]) => {
+      const who = onIds.find(([p,q]) => q === id)?.[0] || "Vide";
+      const rl = (S.squad.find(p => p.name === who)?.roles || []).join("");
+      return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}</span></div>`;}).join("")}</div>`;
+  const benchNames = present().map(p=>p.name).filter(n => !(n in seg.on));
+  const qChanges = visChanges(plan).filter(c => fmtQ(c.t).q === C.q || (Math.abs(c.t - (C.q-1)*ql) < 1e-6 && C.q>1) || (Math.abs(c.t - C.q*ql)<1e-6));
+  const upList = qChanges.map(c => {
+    const isBrk = Math.abs(c.t/ql - Math.round(c.t/ql)) < 1e-6;
+    const lab = isBrk ? "Pause" : fmtQ(c.t).label;
+    return `<div class="up-item${(C.done.includes(c.t) || c.t < t - 0.4) ? " done":""}"><div class="up-t">${lab}</div><div class="up-l">${pairChanges(c).map(pr=>`<div><span class="i">${esc(pr.inP||"—")}</span> remplace <span class="o">${esc(pr.outP||"—")}</span> ${pr.inQ?pill(pr.inQ):""}</div>`).join("")}${c.moves.map(([p,a,b])=>`<div class="m">↔ ${esc(p)} passe en ${esc(posName(b).toLowerCase())}</div>`).join("")}</div></div>`;}).join("") || `<p class="muted">Aucun changement dans ce quart.</p>`;
+  const banners = activeBanners(t);
+  const startBtn = C.running ? `<button class="btn big" id="pause">❚❚ Pause</button>` : (atEnd ? (C.q < S.rules.quarters ? `<button class="btn big primary" id="nextQ">Lancer le Q${C.q+1} ▸</button>` : `<span class="alert-title">Fin du match</span>`) : `<button class="btn big go" id="start">▶ ${el>0?"Reprendre":"Démarrer le Q"+C.q}</button>`);
+  if (far) return `<div class="far">
+      ${matchTitle() ? `<div class="alert-title" style="color:var(--muted)">${esc(matchTitle())}</div>` : ""}<div class="far-top"><span class="qbadge">Q${C.q}</span><div class="time${C.running?"":" paused"}" id="time">${fmtClock(el)}</div><span class="remain" id="remain">Reste ${fmtClock(ql*60-el)}</span></div>
+      ${banners}
+      ${alertHtml}
+      <div class="row">${startBtn}<button class="btn" id="farOff">Vue normale</button><span class="muted" style="font-size:.85rem">Clavier : espace = démarrer/pause · ← → = 10 s</span></div>
+    </div>`;
+  return `<div class="match">
+    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      ${banners}
+      ${incidentPanel(seg)}
+      <div class="card clock">
+        <div class="clock-top"><span class="qbadge">Q${C.q}</span><span class="remain" id="remain">Reste ${fmtClock(ql*60-el)}</span></div>
+        <div class="time${C.running?"":" paused"}" id="time">${fmtClock(el)}</div>
+        <div class="prog"><i id="progBar" style="width:${(el/(ql*60)*100).toFixed(2)}%"></i>${visChanges(plan).filter(c=>fmtQ(c.t).q===C.q && Math.abs(c.t-(C.q-1)*ql)>1e-6).map(c=>`<b style="left:${((c.t-(C.q-1)*ql)/ql*100).toFixed(2)}%"></b>`).join("")}</div>
+        <div class="row">
+          ${startBtn}
+          <button class="btn" id="m10">−10 s</button><button class="btn" id="p10">+10 s</button>
+        </div>
+        <div class="row">
+          <button class="btn warnb" id="incOpen">⚠ Imprévu</button>
+          <button class="btn small" id="swapOpen">↔ Changement</button>
+          ${S.prevPlan ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
+          <button class="btn" id="farOn">⤢ Vue de loin</button>
+          <span class="live ${liveOK?"on":""}">${liveOK ? "● En direct" : ""}</span>
+        </div>
+        <div class="nav" aria-label="Navigation dans le match">
+          <button class="btn" id="m60">−1 min</button><button class="btn" id="p60">+1 min</button>
+          <button class="btn" id="qReset">↺ Quart à 0</button>
+          <button class="btn" id="qPrev" ${C.q<=1?"disabled":""}>◂ Quart préc.</button>
+          <button class="btn" id="qNext" ${C.q>=S.rules.quarters?"disabled":""}>Quart suiv. ▸</button>
+          <button class="btn" id="reset">Match à 0</button>
+        </div>
+      </div>
+      ${alertHtml}
+      ${sheetCard(seg)}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      <div class="card"><h2>Sur le terrain</h2>${pitch}<div style="margin-top:12px"><div class="muted" style="font-size:.85rem;margin-bottom:6px">Sur le banc</div><div class="bench">${benchNames.map(n=>`<span>${esc(n)}</span>`).join("") || '<span>Personne</span>'}</div></div></div>
+      <div class="card"><h2>Changements du Q${C.q}</h2><div class="up">${upList}</div></div>
+    </div></div>`;
+}
+function pitchLines(){ return `<div class="l" style="inset:3% 4%;border-radius:4px"></div><div class="l" style="left:4%;right:4%;top:50%;height:0;border-width:2px 0 0"></div><div class="l" style="left:28%;right:28%;top:3%;height:15%;border-radius:0 0 50% 50%/0 0 100% 100%;border-top:0"></div><div class="l" style="left:28%;right:28%;bottom:3%;height:15%;border-radius:50% 50% 0 0/100% 100% 0 0;border-bottom:0"></div>`; }
+
+let tickTimer = null, lastAlertKey = "";
+function bindMatch(){
+  $("#goCoach")?.addEventListener("click", () => { mode="coach"; render(); });
+  $("#start")?.addEventListener("click", startClock);
+  $("#pause")?.addEventListener("click", pauseClock);
+  $("#nextQ")?.addEventListener("click", () => { markBreakDone(); nextQuarter(); });
+  $("#m10")?.addEventListener("click", () => adjust(-10));
+  $("#p10")?.addEventListener("click", () => adjust(10));
+  $("#doneBtn")?.addEventListener("click", () => { const t = matchT(); const nx = visChanges(S.plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.36); if (nx) C.done.push(nx.t); pushClock(); render(); });
+  $("#reset")?.addEventListener("click", function(){ if (this.dataset.armed) { resetMatch(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
+  $("#m60")?.addEventListener("click", () => adjust(-60));
+  $("#p60")?.addEventListener("click", () => adjust(60));
+  $("#qReset")?.addEventListener("click", () => setClock(C.q, 0));
+  $("#qPrev")?.addEventListener("click", () => setClock(C.q - 1, 0));
+  $("#qNext")?.addEventListener("click", () => setClock(C.q + 1, 0));
+  $("#farOn")?.addEventListener("click", () => setFar(true));
+  $("#farOff")?.addEventListener("click", () => setFar(false));
+  $("#saveMatch")?.addEventListener("click", saveMatch);
+  $("#incOpen")?.addEventListener("click", () => { inc = {type:null, player:null, catchUp:false}; incMsg = ""; render(); });
+  $("#incCancel")?.addEventListener("click", () => { inc = null; render(); });
+  $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed) { S.plan = S.prevPlan; S.prevPlan = null; syncDone(); pushClock(); persist(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
+  $("#swapOpen")?.addEventListener("click", () => { inc = {type:"libre", player:null, inP:null}; incMsg = ""; render(); });
+  document.querySelectorAll("[data-swo]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.swo; render(); }));
+  document.querySelectorAll("[data-swi]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swi; render(); }));
+  bindSheet();
+  document.querySelectorAll("[data-inct]").forEach(b => b.addEventListener("click", () => { inc.type = b.dataset.inct; render(); }));
+  document.querySelectorAll("[data-incp]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.incp; render(); }));
+  $("#catchUp")?.addEventListener("change", e => { inc.catchUp = e.target.checked; });
+  $("#incGo")?.addEventListener("click", () => { incBusy = true; render(); setTimeout(doIncident, 40); });
+}
+function setFar(v){ far = v; try { localStorage.setItem("banc-far", v ? "1" : "0"); } catch(e){} render(); }
+document.addEventListener("keydown", e => {
+  if (mode !== "match" || !S.plan || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
+  if (e.code === "Space") { e.preventDefault(); C.running ? pauseClock() : (clockElapsed() >= S.rules.qlen*60 - 0.5 ? (markBreakDone(), nextQuarter()) : startClock()); }
+  else if (e.key === "ArrowRight") adjust(10);
+  else if (e.key === "ArrowLeft") adjust(-10);
+  else if (e.key === "f" || e.key === "F") setFar(!far);
+});
+function markBreakDone(){ const qEndT = C.q*S.rules.qlen; visChanges(S.plan).forEach(c => { if (Math.abs(c.t-qEndT)<1e-6 && !C.done.includes(c.t)) C.done.push(c.t); }); pushClock(); }
+function tick(){
+  if (mode !== "match" || !S.plan) return;
+  const el = clockElapsed();
+  if (C.running && el >= S.rules.qlen*60) { C.elapsed = S.rules.qlen*60; C.running = false; saveClock(); beep(3); render(); return; }
+  // auto mark change done 25 s after its time
+  const t = matchT();
+  visChanges(S.plan).forEach(c => { if (!C.done.includes(c.t) && (t - c.t)*60 > 25) C.done.push(c.t); });
+  const next = visChanges(S.plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.36);
+  const secs = next ? (next.t - t)*60 : 1e9;
+  const nb = eventsOf().filter(e => (e.type==="vert"||e.type==="jaune") && t >= e.t && t < e.t + e.d).length;
+  const state = (next ? (secs <= 0.5 ? "now" : secs <= S.rules.alertSec ? "soon" : "far") + next.t : "none") + "|" + nb;
+  if (state !== lastAlertKey) { if (state.startsWith("soon") && !lastAlertKey.startsWith("soon")) beep(2); if (state.startsWith("now") && !lastAlertKey.startsWith("now")) beep(1); lastAlertKey = state; if (!inc) render(); return; }
+  const te = $("#time"); if (te) te.textContent = fmtClock(el);
+  const re = $("#remain"); if (re) re.textContent = "Reste " + fmtClock(S.rules.qlen*60 - el);
+  const pb = $("#progBar"); if (pb) pb.style.width = (el/(S.rules.qlen*60)*100).toFixed(2) + "%";
+  document.querySelectorAll("[data-until]").forEach(sp => { const left = (+sp.dataset.until - t)*60; if (left <= 0) { lastAlertKey = ""; } sp.textContent = fmtClock(left); });
+  const ce = $("#count"); if (ce && next && secs > 0.5 && !(Math.abs(next.t - C.q*S.rules.qlen)<1e-6 && secs > S.rules.alertSec)) ce.textContent = fmtClock(secs);
+}
+
+/* ---------- coach ---------- */
+function pinView(){ return `<div class="card pin"><h2>Mode coach</h2><p class="muted">Entre le code coach pour voir l'effectif et les temps de jeu.</p><input id="pinIn" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Code coach"><div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
+function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); $("#pinIn").focus(); }
+
+function coachView(){
+  const T = computeTargets();
+  const ids = PRESETS[S.preset].map(p=>p[0]);
+  const rows = S.squad.map((p,i) => `<tr class="${p.present?"":"absent"}">
+    <td><input type="checkbox" data-i="${i}" data-k="present" ${p.present?"checked":""} aria-label="Présent"></td>
+    <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
+    <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
+    <td><select data-i="${i}" data-k="note" aria-label="Note">${[2,2.5,3,3.5,4,4.5,5].map(n=>`<option ${+p.note===n?"selected":""}>${n}</option>`).join("")}</select></td>
+    <td><input type="number" step="0.5" min="0" data-i="${i}" data-k="minutes" value="${p.minutes||""}" placeholder="${p.present && T[p.name]!==undefined ? R.fmtMin(T[p.name]).replace("'",",").replace(/,$/,"") : ""}" aria-label="Minutes fixées"></td>
+    <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="—" aria-label="Passage max"></td>
+    <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
+    <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
+  const pres = present();
+  const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
+  const rulesHtml = RULE_LABELS.map(([k,l,st]) => `<label>${esc(l)}<input type="number" step="${st}" data-rule="${k}" value="${S.rules[k]}"></label>`).join("");
+  return `
+  ${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Donne un nom à ton équipe, puis ajoute tes joueurs dans « Effectif ». Tu as déjà une sauvegarde ? Charge-la dans « Sauvegarde » plus bas.</p></div>` : ""}
+  <div class="card"><h2>Équipe</h2>
+    <div class="row"><input type="text" id="tName" value="${esc(S.teamName||"")}" placeholder="Nom de l'équipe, ex. Messieurs 1" aria-label="Nom de l'équipe" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600"></div>
+  </div>
+  <div class="card"><h2>Match</h2>
+    <div class="row"><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="Nom du match, ex. Wellington – Daring" aria-label="Nom du match" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600">
+      <input type="date" id="mDate" value="${esc(S.matchDate||"")}" aria-label="Date du match" style="border:1px solid var(--rule);border-radius:8px;padding:7px 10px;background:var(--bg)"></div>
+  </div>
+  <div class="card"><h2>Code coach</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Un code protège cet onglet. Les joueurs ne voient que l'onglet Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir cet onglet et voir les notes et les minutes."}</p>
+    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="ex. 1234" aria-label="Code coach" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
+      <button class="btn primary" id="pinSave">Enregistrer le code</button>
+      ${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}
+      <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
+  </div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Effectif</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
+    <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Coche les présents. Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Laisse « Minutes » vide pour un calcul automatique à partir des notes. Corners : D donneur, B bloqueur.</p>
+    <div class="tbl-wrap"><table><thead><tr><th>Là</th><th>Nom</th><th>Postes</th><th>Note</th><th>Minutes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button><button class="btn" id="clearMin">Effacer les minutes fixées</button><span class="muted" style="font-size:.9rem">${pres.length} présents</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h2>Système et compo de départ</h2>
+      <div class="row" style="margin-bottom:12px"><label for="preset" class="muted">Système</label><select id="preset" style="border:1px solid var(--rule);border-radius:8px;padding:6px 10px;background:var(--bg)">${Object.keys(PRESETS).map(k=>`<option ${k===S.preset?"selected":""}>${k}</option>`).join("")}</select></div>
+      <div class="pitch">${pitchLines()}${lineupSel}</div>
+    </div>
+    <div class="card"><h2>Règles</h2><div class="rules">${rulesHtml}</div>
+    </div>
+  </div>
+  <div class="card"><h2>Sauvegarde</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil. Le code coach n'est pas dans le fichier.</p>
+    <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
+    ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
+  </div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Saison</h2>
+    <div class="row">${S.plan && !S.plan.savedAt ? `<button class="btn primary" id="saveMatchC">Enregistrer le match en cours</button>` : ""}</div></div>
+    ${seasonMsg ? `<div class="ok" style="margin-top:8px">${esc(seasonMsg)}</div>` : ""}
+    <div style="margin-top:12px">${seasonHtml()}</div>
+  </div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Plan de rotation</h2>
+    <div class="row">${S.plan ? `<button class="btn" id="pdfB">📄 Plan B (PDF)</button>` : ""}<button class="btn primary" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go" id="use">Utiliser pour le match</button>` : ""}</div></div>
+    <div id="genOut" style="margin-top:12px">${previewHtml()}</div>
+  </div>`;
+}
+const nicePos = w => String(w).replace(/le poste (\w+)/g, (m, q) => "le poste « " + posName(q) + " »");
+function previewHtml(){
+  const plan = preview || S.plan;
+  if (!plan) return `<p class="muted">Clique sur « Générer le plan » une fois l'effectif et la compo prêts.</p>`;
+  if (plan.error) return `<div class="warn">${plan.warnings.map(w => esc(nicePos(w))).join("<br>")}</div>`;
+  const tag = preview ? `<div class="warn" style="background:var(--chip);color:var(--ink)">Nouvelle version, pas encore utilisée pour le match.</div>` : `<div class="ok">Plan actif pour le match.</div>`;
+  const warn = plan.warnings.length ? `<div class="warn" style="margin-top:8px">${plan.warnings.map(w => esc(nicePos(w))).join("<br>")}</div>` : `<div class="ok" style="margin-top:8px">Toutes les règles sont respectées. ${plan.changes.length} fenêtres de changement.</div>`;
+  const names = Object.keys(plan.played).sort((a,b)=>plan.played[b]-plan.played[a]);
+  const END = S.rules.quarters*S.rules.qlen;
+  const rec = names.map(n => { const d = plan.played[n]-plan.targets[n]; return `<tr><td>${esc(n)}</td><td>${R.fmtMin(plan.played[n])}</td><td class="muted">${R.fmtMin(plan.targets[n])}</td><td class="dev" style="color:${Math.abs(d)<=1.5?"var(--in)":"var(--out)"}">${d>=0?"+":"−"}${R.fmtMin(Math.abs(d))}</td></tr>`; }).join("");
+  const tl = names.map(n => `<div class="tlr"><div>${esc(n)}</div><div class="trk">${plan.segs.map(s => s.on[n] ? `<i style="left:${s.a/END*100}%;width:${(s.b-s.a)/END*100}%;background:var(--${posMeta(s.on[n]).line})">${(s.b-s.a)>=2.5?esc(posShort(s.on[n])):""}</i>` : "").join("")}${[1,2,3].map(k=>`<span class="q" style="left:${k*25}%"></span>`).join("")}</div></div>`).join("");
+  return `${tag}${warn}<div class="grid2" style="margin-top:12px"><div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Prévu</th><th>Visé</th><th>Écart</th></tr></thead><tbody>${rec}</tbody></table></div><div class="tl"><div class="tl-in">${tl}</div></div></div>`;
+}
+function bindCoach(){
+  const v = $("#view");
+  v.querySelectorAll("[data-i]").forEach(el => el.addEventListener("change", () => {
+    const p = S.squad[+el.dataset.i], k = el.dataset.k;
+    if (k === "present") p.present = el.checked;
+    else if (k === "pos") p.pos = el.value.split(/[ ,;/]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+    else if (k === "note") p.note = +el.value;
+    else if (k === "minutes" || k === "maxStint") p[k] = el.value ? +el.value : 0;
+    else p[k] = el.value;
+    preview = null; persist(); render();
+  }));
+  v.querySelectorAll("[data-del]").forEach(el => el.addEventListener("click", () => { if (el.dataset.armed) { S.squad.splice(+el.dataset.del,1); preview=null; persist(); render(); } else { el.dataset.armed=1; el.textContent="Sûr ?"; } }));
+  v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; p.pos = p.pos.filter(q => q !== b.dataset.q); preview = null; persist(); render(); }));
+  v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
+  v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
+  $("#addP").addEventListener("click", () => { S.squad.push({name:"Nouveau joueur",pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
+  $("#clearMin").addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); });
+  $("#preset").addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
+  v.querySelectorAll("[data-lu]").forEach(el => el.addEventListener("change", () => { const id = el.dataset.lu; for (const k in S.lineup) if (S.lineup[k] === el.value && k !== id) delete S.lineup[k]; if (el.value) S.lineup[id] = el.value; else delete S.lineup[id]; preview=null; persist(); render(); }));
+  v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
+  $("#pinSave").addEventListener("click", () => { S.pin = $("#pinSet").value.trim(); persist(); coachOK = true; render(); const m = $("#pinMsg"); if (m) m.textContent = S.pin ? "Code enregistré." : "Code supprimé."; });
+  $("#lockNow")?.addEventListener("click", () => { coachOK = false; mode = "match"; render(); });
+  $("#pdfB")?.addEventListener("click", makePdf);
+  $("#matchLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value; persist(); render(); });
+  $("#tName")?.addEventListener("change", e => { S.teamName = e.target.value.trim(); persist(); render(); });
+  $("#bkOut")?.addEventListener("click", exportBackup);
+  $("#bkIn")?.addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); });
+  $("#mLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value.trim(); persist(); render(); });
+  $("#mDate")?.addEventListener("change", e => { S.matchDate = e.target.value; persist(); render(); });
+  $("#saveMatchC")?.addEventListener("click", saveMatch);
+  document.querySelectorAll("[data-delm]").forEach(b => b.addEventListener("click", () => { if (b.dataset.armed) deleteMatch(b.dataset.delm); else { b.dataset.armed = 1; b.textContent = "Sûr ?"; } }));
+  $("#gen").addEventListener("click", () => { const b = $("#gen"); b.disabled = true; b.textContent = "Calcul…"; setTimeout(() => { preview = generate(Date.now() % 100000 + (seedN++)); render(); }, 30); });
+  $("#use")?.addEventListener("click", () => { S.plan = preview; preview = null; S.prevPlan = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; pushClock(); persist(); render(); });
+}
+
+/* ---------- boot ---------- */
+$("#tabMatch").addEventListener("click", () => { mode = "match"; render(); });
+$("#tabCoach").addEventListener("click", () => { mode = "coach"; render(); });
+loadLocal();
+saveState = "Données de cet appareil";
+render(); paintSub();
+setInterval(tick, 250);
+(async () => {
+  try {
+    db = await window.claude?.use?.("db");
+    if (!db) { saveState = "Hors ligne : données de cet appareil"; paintSub(); return; }
+    docRef = db.doc("config/main");
+    const snap = await docRef.get();
+    if (snap.exists) { applyData(snap.data()); saveLocal(); }
+    saveState = "Synchronisé"; paintSub(); render();
+    docRef.onSnapshot(sn => {
+      if (!sn.exists) return; const d = sn.data();
+      if (d._by === SID) return;
+      applyData(d); saveLocal(); preview = null;
+      const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "");
+      if (!typing) render();
+    }, () => {});
+    liveRef = db.doc("live/clock");
+    const ls = await liveRef.get();
+    if (ls.exists) { const d = ls.data(); if (Date.now() - (d.at||0) < 6*3600e3) { C = {q:d.q, elapsed:d.elapsed, running:d.running, startedAt:d.startedAt, done:[...(d.done||[])]}; saveClock(); } }
+    liveOK = true; render();
+    liveRef.onSnapshot(sn => {
+      if (!sn.exists) return; const d = sn.data();
+      liveOK = true;
+      if (d.by === SID) return;
+      C = {q:d.q, elapsed:d.elapsed, running:d.running, startedAt:d.startedAt, done:[...(d.done||[])]}; saveClock(); lastAlertKey = "";
+      if (mode === "match" && !inc) render();
+    }, () => { liveOK = false; });
+  } catch(e) { if (!docRef) { saveState = "Hors ligne : données de cet appareil"; paintSub(); } }
+})();
+</script>
+
+</body></html>
