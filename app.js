@@ -136,6 +136,8 @@ function curMatchRec(){
 }
 function ensureMatches(){
   if (!Array.isArray(S.matches)) S.matches = [];
+  // Réparer les matchs restés sans identifiant (ils ne pouvaient plus être ouverts ni supprimés).
+  S.matches.forEach(m => { if (!m.id) m.id = newId(); });
   if (!S.curMatch) S.curMatch = newId();
   if (!S.matches.some(m => m.id === S.curMatch)) S.matches.push(curMatchRec());
 }
@@ -152,7 +154,7 @@ function openMatch(id, store = true){
   preview = null; inc = null; lastAlertKey = ""; persist(); pushClock();
 }
 function createMatch(opp, date, home){
-  storeCur();
+  if (S.curMatch) storeCur();
   const us = S.profile?.club || S.teamName || "Nous";
   const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, lineup:{...S.lineup}, plan:null, prevPlan:null, sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
   S.matches.push(r); openMatch(r.id, false);
