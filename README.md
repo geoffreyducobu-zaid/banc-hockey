@@ -17,8 +17,11 @@ Ouvrir `index.html` dans un navigateur. L'app démarre vide : donne un nom à to
 
 - `index.html` : la page et le style (couleurs en haut, dans `:root`).
 - `app.js` : les écrans (Match, Coach), le chrono, la sauvegarde.
+- `cloud.js` : le compte coach (email + mot de passe) et la sauvegarde en ligne. Tout reste d'abord sur le téléphone, l'envoi en ligne se fait dès qu'il y a du réseau.
+- `config.js` : l'adresse du projet Supabase et sa clé publique (jamais la clé secrète).
+- `supabase/` : la table à créer dans Supabase et les réglages à faire une fois (`LISEZMOI.md`).
 - `rotation.js` : le moteur qui calcule le plan de changements.
-- `vendor/` et `fonts/` : l'outil PDF (jsPDF) et les polices Barlow, embarqués pour marcher sans internet.
+- `vendor/` et `fonts/` : l'outil PDF (jsPDF), la bibliothèque Supabase et les polices Barlow, embarqués pour marcher sans internet.
 - `tests/` : vérifications automatiques du moteur. Lancer avec `npm test`.
 
 ## Mise en ligne

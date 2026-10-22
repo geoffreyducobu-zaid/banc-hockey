@@ -21,7 +21,7 @@ function applyTheme(){ if (prefs.theme === "auto") document.documentElement.remo
 const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
 let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
 let season = null, seasonMsg = "";
-let db = null, docRef = null, saveTimer = null, saving = false, saveAgain = false, saveState = "";
+let saveState = "";
 let C = loadClock();
 
 const $ = (s, el=document) => el.querySelector(s);
@@ -48,19 +48,8 @@ function pushClock(){
     liveBusy = false; if (liveAgain) { liveAgain = false; go(); }
   })();
 }
-function persist(){
-  saveLocal();
-  if (!docRef) return;
-  clearTimeout(saveTimer); saveState = "Enregistrement…"; paintSave();
-  saveTimer = setTimeout(async function go(){
-    if (saving) { saveAgain = true; return; }
-    saving = true;
-    try { S._by = SID; await docRef.set(JSON.parse(JSON.stringify(S))); saveState = "Enregistré"; }
-    catch(e){ saveState = "Enregistré sur cet appareil seulement"; }
-    saving = false; paintSave();
-    if (saveAgain) { saveAgain = false; go(); }
-  }, 800);
-}
+// Toujours enregistré sur le téléphone d'abord ; cloud.js l'envoie en ligne si le coach a un compte.
+function persist(){ saveLocal(); markChanged(); }
 function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "Banc"; }
 const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
 function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = teamTitle();
@@ -415,9 +404,8 @@ async function loadSeason(){
   if (seasonLoading) return; seasonLoading = true;
   await new Promise(r => setTimeout(r, 0));
   try {
-    if (db) { const qs = await db.collection("matches").get(); season = qs.docs.map(d => ({id:d.id, ...JSON.parse(JSON.stringify(d.data()))})); }
-    else { season = JSON.parse(localStorage.getItem("banc-season") || "[]"); }
-  } catch(e){ try { season = JSON.parse(localStorage.getItem("banc-season") || "[]"); } catch(_) { season = []; } }
+    season = JSON.parse(localStorage.getItem("banc-season") || "[]");
+  } catch(e){ season = []; }
   seasonLoading = false;
   season.sort((a,b) => (a.date||"").localeCompare(b.date||""));
   if (mode==="coach") render();
@@ -428,16 +416,15 @@ async function saveMatch(){
   for (const [n,m] of Object.entries(S.plan.played)) rec.minutes[n] = Math.round(m*10)/10;
   for (const [n,m] of Object.entries(S.plan.targets||{})) rec.targets[n] = Math.round(m*10)/10;
   try {
-    if (db) await db.collection("matches").add(rec);
-    else { const L = JSON.parse(localStorage.getItem("banc-season") || "[]"); L.push({id:String(Date.now()), ...rec}); localStorage.setItem("banc-season", JSON.stringify(L)); }
+    const L = JSON.parse(localStorage.getItem("banc-season") || "[]"); L.push({id:String(Date.now()), ...rec}); localStorage.setItem("banc-season", JSON.stringify(L));
     S.plan.savedAt = Date.now(); persist(); seasonMsg = "Match enregistré dans la saison ✓";
   } catch(e){ seasonMsg = "L'enregistrement a échoué, réessaie."; }
   season = null; render();
 }
 async function deleteMatch(id){
   try {
-    if (db) await db.collection("matches").doc(id).delete();
-    else { const L = JSON.parse(localStorage.getItem("banc-season") || "[]").filter(x => x.id !== id); localStorage.setItem("banc-season", JSON.stringify(L)); }
+    const L = JSON.parse(localStorage.getItem("banc-season") || "[]").filter(x => x.id !== id); localStorage.setItem("banc-season", JSON.stringify(L));
+    markChanged();
   } catch(e){}
   season = null; loadSeason();
 }
@@ -460,8 +447,9 @@ function render(){
   paintSub();
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
   const v = $("#view");
-  const onboard = !S.profile || !!newCode;
+  const acc = accountScreen(), onboard = !!acc || !S.profile;
   document.body.classList.toggle("onboard", onboard);
+  if (acc) { v.innerHTML = acc; bindAccount(); return; }
   if (onboard) { v.innerHTML = onboardView(); bindOnboard(); return; }
   if (mode === "coach" && S.pin && !coachOK) { v.innerHTML = pinView(); bindPin(); return; }
   const [view, bind] = VIEWS[mode] || VIEWS.home;
@@ -640,7 +628,7 @@ function tick(){
 }
 
 /* ---------- inscription (première ouverture) ---------- */
-let newCode = null, onboardMsg = "";
+let onboardMsg = "";
 const PROFILE_FIELDS = [["first","Prénom","ex. Geoffrey",true],["last","Nom","",false],["club","Club","ex. Wellington",false],["team","Équipe","ex. Messieurs 1",true]];
 function profileFields(){
   const val = k => k === "team" ? (S.teamName || "") : (S.profile?.[k] || "");
@@ -652,21 +640,13 @@ function readProfile(){
   S.profile = {first:v.first, last:v.last, club:v.club}; S.teamName = v.team;
   return v;
 }
-// Code coach : 5 caractères au hasard, sans les signes qu'on confond (0/O, 1/I/L).
 // Champ de code : clavier de chiffres, chiffres masqués.
 const pinField = (id, label, extra = "") => `<input type="text" class="pinf" id="${id}" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" aria-label="${esc(label)}" placeholder="••••" ${extra}>`;
 const digitsOnly = () => document.querySelectorAll(".pinf").forEach(el => el.addEventListener("input", () => { el.value = el.value.replace(/\D/g, "").slice(0, 6); }));
 const pinOk = c => /^(\d{4}|\d{6})$/.test(c);
-function genCoachId(){ const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789", r = new Uint32Array(5); crypto.getRandomValues(r); return Array.from(r, x => A[x % A.length]).join(""); }
 function onboardView(){
-  if (newCode) return `<div class="card onb"><h2>Ton code coach</h2>
-    <div class="code">${esc(newCode)}</div>
-    <p style="margin:0">C'est ton identifiant. Note-le bien (photo, notes du téléphone…), avec ton code de verrouillage.</p>
-    <p class="muted" style="margin:0;font-size:.92rem">Tu le retrouves à tout moment dans Réglages. Bientôt, ces deux codes te permettront de retrouver ton équipe sur un autre téléphone.</p>
-    <button class="btn go big" id="codeOk">C'est noté</button>
-  </div>`;
-  return `<div class="card onb"><h2>Bienvenue sur Banc</h2>
-    <p style="margin:0">L'app qui prépare tes changements et te prévient pendant le match. Pour commencer, présente-toi :</p>
+  return `<div class="card onb"><h2>${user ? "Ton profil" : "Bienvenue sur Banc"}</h2>
+    <p style="margin:0">${user ? "Ton compte est prêt." : "L'app qui prépare tes changements et te prévient pendant le match."} Pour commencer, présente-toi :</p>
     <div class="form">${profileFields()}
       <label class="fld"><span>Code de verrouillage (4 ou 6 chiffres)</span>${pinField("pinNew", "Code de verrouillage")}</label>
       <label class="fld"><span>Confirme le code</span>${pinField("pinNew2", "Confirme le code")}</label></div>
@@ -675,8 +655,8 @@ function onboardView(){
     <button class="btn go big" id="onbGo">Je commence</button>
   </div>
   <div class="card"><h2>J'ai déjà mes données</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Charge le fichier de sauvegarde téléchargé depuis l'app sur ton autre téléphone. Bientôt, ton code coach suffira.</p>
-    <label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${CLOUD_ON && !user ? "Connecte-toi à ton compte, ou charge" : "Charge"} le fichier de sauvegarde téléchargé depuis l'app sur ton autre téléphone.</p>
+    <div class="row">${CLOUD_ON && !user ? `<button class="btn primary" id="onbLogin">Me connecter</button>` : ""}<label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
     ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
   </div>`;
 }
@@ -684,15 +664,13 @@ function onboardView(){
 function keepForm(){ const v = {}; document.querySelectorAll("[data-prof]").forEach(el => v[el.dataset.prof] = el.value); render(); document.querySelectorAll("[data-prof]").forEach(el => el.value = v[el.dataset.prof] ?? el.value); }
 function bindOnboard(){
   digitsOnly();
-  $("#codeOk")?.addEventListener("click", () => { newCode = null; goTo("home"); render(); });
+  $("#onbLogin")?.addEventListener("click", () => openAuth("login"));
   $("#onbGo")?.addEventListener("click", () => {
     const pin = $("#pinNew").value.trim();
     if (!pinOk(pin)) { onboardMsg = "Choisis un code de verrouillage de 4 ou 6 chiffres."; keepForm(); return; }
     if ($("#pinNew2").value.trim() !== pin) { onboardMsg = "Les deux codes ne sont pas pareils. Retape-les."; keepForm(); return; }
     if (!readProfile()) { onboardMsg = "Indique au moins ton prénom et ton équipe."; keepForm(); return; }
     onboardMsg = ""; S.pin = pin;
-    if (!S.coachId) S.coachId = genCoachId();
-    newCode = S.coachId;
     coachOK = true; mode = "home"; persist(); render(); window.scrollTo(0, 0);
   });
   $("#bkIn")?.addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); });
@@ -709,6 +687,7 @@ function homeView(){
       : `<p style="margin:0 0 12px">${title ? `<b>${esc(title)}</b><br>` : ""}<span class="muted">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></p>
       ${ready ? `<button class="btn go big" id="hMatch">Ouvrir le match ▸</button>` : `<button class="btn primary" id="hCoach">Préparer le match</button>`}`}
   </div>
+  ${accountNudge()}
   <div class="card"><h2>Comment ça marche</h2>
     <ol class="steps">
       <li><b>Coach</b> : crée ton équipe et tes joueurs, avec leurs postes.</li>
@@ -722,6 +701,7 @@ function homeView(){
 function bindHome(){
   $("#hCoach")?.addEventListener("click", () => goTo("coach"));
   $("#hMatch")?.addEventListener("click", () => goTo("match"));
+  bindAccountNudge();
 }
 
 /* ---------- réglages ---------- */
@@ -737,7 +717,8 @@ function settingsView(){
     <div class="set"><div><b>Thème</b><div class="muted">Auto suit le réglage du téléphone.</div></div>
       ${segBtns("theme", [["auto","Auto"],["light","Clair"],["dark","Sombre"]])}</div>
   </div>
-  ${locked ? pinView("Réglages coach", "Entre ton code de verrouillage pour modifier ton profil, les règles et la sauvegarde.") : `
+  ${locked ? pinView("Réglages coach", "Entre ton code de verrouillage pour modifier ton profil, ton compte, les règles et la sauvegarde.") : `
+  ${accountCard()}
   <div class="card"><h2>Règles de rotation</h2>
     <p class="muted" style="margin:0 0 10px;font-size:.92rem">Elles servent au prochain plan généré dans la page Coach.</p>
     <div class="rules">${rulesHtml}</div>
@@ -746,10 +727,6 @@ function settingsView(){
     <div class="form">${profileFields()}</div>
     <div class="row" style="margin-top:12px"><button class="btn primary" id="profSave">Enregistrer</button><span id="profMsg" class="muted" style="font-size:.9rem"></span></div>
   </div>
-  ${S.coachId ? `<div class="card"><h2>Code coach</h2>
-    <div class="code" style="font-size:2.4rem">${esc(S.coachId)}</div>
-    <p class="muted" style="margin:10px 0 0;font-size:.92rem">Ton identifiant. Bientôt, avec ton code de verrouillage, il te permettra de retrouver ton équipe sur un autre téléphone.</p>
-  </div>` : ""}
     <div class="card"><h2>Code de verrouillage</h2>
     <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Ce code protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
     <div class="form" style="max-width:480px"><label class="fld"><span>Nouveau code (4 ou 6 chiffres)</span>${pinField("pinSet", "Nouveau code")}</label><label class="fld"><span>Confirme le code</span>${pinField("pinSet2", "Confirme le code")}</label></div>
@@ -759,7 +736,7 @@ function settingsView(){
       <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
   </div>
     <div class="card"><h2>Sauvegarde</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil. Le code de verrouillage n'est pas dans le fichier.</p>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${CLOUD_ON && user ? "Ton compte sauvegarde déjà tout en ligne. Tu peux en plus garder un fichier de sauvegarde (effectif, plan, saison) chez toi." : "Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil."} Le code de verrouillage n'est pas dans le fichier.</p>
     <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
     ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
   </div>`}`;
@@ -778,6 +755,7 @@ function bindSettings(){
   $("#pinSave").addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
   $("#profSave").addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
   $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
+  bindAccountCard();
   $("#bkOut")?.addEventListener("click", exportBackup);
   $("#bkIn")?.addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); });
 }
@@ -871,11 +849,11 @@ function bindCoach(){
 /* ---------- boot ---------- */
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => goTo(b.dataset.tab)));
 applyTheme();
-loadLocal(); ensureMatches();
+loadLocal(); ensureMatches(); delete S.coachId;
 saveState = "Données de cet appareil";
+cloudInit(); paintCloud();
 render(); paintSub();
 setInterval(tick, 250);
-// La synchro en ligne (code d'équipe, chrono partagé) arrive à l'étape suivante.
 
 // Copie hors ligne de l'app (seulement quand elle est servie en ligne, pas en fichier local).
 try { navigator.storage?.persist?.(); } catch(e){}
