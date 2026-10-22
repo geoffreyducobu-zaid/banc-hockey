@@ -10,10 +10,15 @@ const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:6,startBlock:4,endBlock:
 const RULE_LABELS = [["qlen","Durée d'un quart (min)",0.5],["firstChange","Q1 : premier changement après (min)",1],["startBlock","Rien dans les premières (min) d'un quart",1],["endBlock","Rien dans les dernières (min) d'un quart",1],["minDef","Passage minimum défenseurs (min)",1],["minMid","Passage minimum milieux (min)",1],["minAtt","Passage minimum attaquants (min)",1],["maxStint","Passage maximum (min)",1],["maxBench","Banc maximum par quart (min)",1],["maxEntries","Entrées max en même temps",1],["minPlay","Temps de jeu minimum (min)",1],["alertSec","Alerte avant changement (s)",5]];
 
 let S = {squad:[],preset:"3-2-3-2",lineup:{},rules:{...DEFAULT_RULES},plan:null,pin:""};
-let mode = "match", coachOK = false, preview = null, seedN = 1;
+let mode = "home", coachOK = false, preview = null, seedN = 1;
 const SID = Math.random().toString(36).slice(2);
 let liveRef = null, liveOK = false, liveBusy = false, liveAgain = false;
 let inc = null, incBusy = false, incMsg = "";
+// Réglages de l'app, propres à cet appareil (pas dans la sauvegarde).
+let prefs = {sound:true, vibrate:true, theme:"auto"}; try { prefs = {...prefs, ...JSON.parse(localStorage.getItem("banc-prefs") || "{}")}; } catch(e){}
+function savePrefs(){ try { localStorage.setItem("banc-prefs", JSON.stringify(prefs)); } catch(e){} }
+function applyTheme(){ if (prefs.theme === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", prefs.theme); }
+const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
 let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
 let season = null, seasonMsg = "";
 let db = null, docRef = null, saveTimer = null, saving = false, saveAgain = false, saveState = "";
@@ -101,7 +106,7 @@ function visChanges(plan){
   _vc = plan.changes.map(c => {
     const skip = new Set();
     ev.forEach(e => {
-      if ((e.type==="vert"||e.type==="jaune") && (Math.abs(c.t-e.t)<1e-6 || Math.abs(c.t-(e.t+e.d))<1e-6)) skip.add(e.player);
+      if (timedCard(e.type) && (Math.abs(c.t-e.t)<1e-6 || Math.abs(c.t-(e.t+e.d))<1e-6)) skip.add(e.player);
       if (e.type==="rouge" && Math.abs(c.t-e.t)<1e-6) skip.add(e.player);
     });
     if (!skip.size) return c;
@@ -130,10 +135,11 @@ function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; 
 function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
-function beep(n){ if (!actx) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
+function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Array.from({length:n}, () => [200,100]).flat()); } catch(e){} } if (!actx || !prefs.sound) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
 
 /* ---------- incidents ---------- */
-const INC = {bless:{label:"Blessure",icon:"🩹",d:0}, vert:{label:"Carton vert",icon:"🟩",d:2}, jaune:{label:"Carton jaune",icon:"🟨",d:5}, rouge:{label:"Carton rouge",icon:"🟥",d:0}};
+const INC = {bless:{label:"Blessure",icon:"🩹",d:0}, vert:{label:"Carton vert",icon:"🟩",d:2}, jaune:{label:"Carton jaune",icon:"🟨",d:5}, jaune10:{label:"Carton jaune",icon:"🟨",d:10}, rouge:{label:"Carton rouge",icon:"🟥",d:0}};
+const timedCard = t => t==="vert" || t==="jaune" || t==="jaune10";
 function eventsOf(){ return (S.plan && S.plan.events) || []; }
 function outForGood(){ return eventsOf().filter(e => e.type==="bless" || e.type==="rouge").map(e => e.player); }
 function doIncident(){
@@ -148,9 +154,9 @@ function doIncident(){
   if (type === "libre") o.swap = {out: p, in: inc.inP, pos: inc.pos || null};
   if (type === "bless") o.out.push(p);
   if (type === "rouge") { o.out.push(p); o.vacate.push(seg.on[p]); }
-  if (type === "vert" || type === "jaune") { o.freezeUntil = Math.min(S.rules.quarters*S.rules.qlen, T + info.d); o.freezeOut = [p]; if (!inc.catchUp) o.adjust[p] = -info.d; }
+  if (timedCard(type)) { o.freezeUntil = Math.min(S.rules.quarters*S.rules.qlen, T + info.d); o.freezeOut = [p]; if (!inc.catchUp) o.adjust[p] = -info.d; }
   // keep earlier adjustments
-  eventsOf().forEach(e => { if ((e.type==="vert"||e.type==="jaune") && !e.catchUp) o.adjust[e.player] = (o.adjust[e.player]||0); });
+  eventsOf().forEach(e => { if (timedCard(e.type) && !e.catchUp) o.adjust[e.player] = (o.adjust[e.player]||0); });
   const res = R.replan(S.plan, o);
   if (res.error) { incMsg = res.warnings.join(" "); incBusy = false; render(); return; }
   res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
@@ -161,7 +167,7 @@ function activeBanners(t){
   const out = [];
   eventsOf().forEach(e => {
     const i = INC[e.type];
-    if ((e.type==="vert"||e.type==="jaune") && t >= e.t - 1e-6 && t < e.t + e.d) out.push(`<div class="banner ${e.type}"><b>${i.icon} ${esc(i.label)} : ${esc(e.player)}</b> exclu, on joue à 10. Retour dans <span data-until="${e.t+e.d}">${fmtClock((e.t+e.d-t)*60)}</span></div>`);
+    if (timedCard(e.type) && t >= e.t - 1e-6 && t < e.t + e.d) out.push(`<div class="banner ${e.type}"><b>${i.icon} ${esc(i.label)} : ${esc(e.player)}</b> exclu, on joue à 10. Retour dans <span data-until="${e.t+e.d}">${fmtClock((e.t+e.d-t)*60)}</span></div>`);
     if (e.type==="rouge" && t >= e.t - 1e-6) out.push(`<div class="banner rouge"><b>🟥 Carton rouge : ${esc(e.player)}</b> exclu jusqu'à la fin, on joue à 10.</div>`);
     if (e.type==="bless" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner bless"><b>🩹 ${esc(e.player)} blessé</b> : le plan a été recalculé sans lui.</div>`);
   });
@@ -187,7 +193,7 @@ function incidentPanel(seg){
   if (inc && inc.type === "libre") return swapPanel(seg);
   if (!inc) return "";
   const onField = Object.keys(seg.on);
-  const card = inc.type==="vert" || inc.type==="jaune";
+  const card = timedCard(inc.type);
   return `<div class="card incp"><h2>Imprévu</h2>
     <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quel joueur ?</div>
@@ -320,15 +326,16 @@ function seasonHtml(){
 }
 
 /* ---------- rendering ---------- */
+const VIEWS = {home:[homeView, bindHome], match:[matchView, bindMatch], coach:[coachView, bindCoach], settings:[settingsView, bindSettings]};
 function render(){
   paintSub();
-  $("#tabMatch").setAttribute("aria-pressed", mode==="match");
-  $("#tabCoach").setAttribute("aria-pressed", mode==="coach");
+  document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
   const v = $("#view");
   if (mode === "coach" && S.pin && !coachOK) { v.innerHTML = pinView(); bindPin(); return; }
-  v.innerHTML = mode === "match" ? matchView() : coachView();
-  mode === "match" ? bindMatch() : bindCoach();
+  const [view, bind] = VIEWS[mode] || VIEWS.home;
+  v.innerHTML = view(); bind();
 }
+function goTo(m){ if (m === mode) return; mode = m; inc = null; render(); window.scrollTo(0, 0); }
 function pill(id){ const m = posMeta(id); return `<span class="pos ${m.line}" title="${esc(m.label)}">${esc(m.short)}</span>`; }
 
 function pairChanges(ch){
@@ -356,7 +363,7 @@ function changeLines(ch){
 }
 function matchView(){
   const plan = S.plan;
-  if (!plan) return `<div class="card empty"><h2>Pas encore de plan</h2><p class="muted">Va dans l'onglet Coach : coche les présents, choisis la compo, puis génère le plan de rotation.</p><button class="btn primary" id="goCoach">Aller au mode Coach</button></div>`;
+  if (!plan) return `<div class="card empty"><h2>Pas encore de plan</h2><p class="muted">Va dans la page Coach : coche les présents, choisis la compo, puis génère le plan de rotation.</p><button class="btn primary" id="goCoach">Aller à la page Coach</button></div>`;
   const ql = S.rules.qlen, el = clockElapsed(), t = matchT();
   const atEnd = el >= ql*60 - 0.5;
   const next = visChanges(plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.01 - 0.35);
@@ -437,7 +444,7 @@ function pitchLines(){ return `<div class="l" style="inset:3% 4%;border-radius:4
 
 let tickTimer = null, lastAlertKey = "";
 function bindMatch(){
-  $("#goCoach")?.addEventListener("click", () => { mode="coach"; render(); });
+  $("#goCoach")?.addEventListener("click", () => goTo("coach"));
   $("#start")?.addEventListener("click", startClock);
   $("#pause")?.addEventListener("click", pauseClock);
   $("#nextQ")?.addEventListener("click", () => { markBreakDone(); nextQuarter(); });
@@ -475,17 +482,17 @@ document.addEventListener("keydown", e => {
 });
 function markBreakDone(){ const qEndT = C.q*S.rules.qlen; visChanges(S.plan).forEach(c => { if (Math.abs(c.t-qEndT)<1e-6 && !C.done.includes(c.t)) C.done.push(c.t); }); pushClock(); }
 function tick(){
-  if (mode !== "match" || !S.plan) return;
+  if (!S.plan) return;
   const el = clockElapsed();
-  if (C.running && el >= S.rules.qlen*60) { C.elapsed = S.rules.qlen*60; C.running = false; saveClock(); beep(3); render(); return; }
+  if (C.running && el >= S.rules.qlen*60) { C.elapsed = S.rules.qlen*60; C.running = false; saveClock(); beep(3); if (mode === "match") render(); return; }
   // auto mark change done 25 s after its time
   const t = matchT();
   visChanges(S.plan).forEach(c => { if (!C.done.includes(c.t) && (t - c.t)*60 > 25) C.done.push(c.t); });
   const next = visChanges(S.plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.36);
   const secs = next ? (next.t - t)*60 : 1e9;
-  const nb = eventsOf().filter(e => (e.type==="vert"||e.type==="jaune") && t >= e.t && t < e.t + e.d).length;
+  const nb = eventsOf().filter(e => timedCard(e.type) && t >= e.t && t < e.t + e.d).length;
   const state = (next ? (secs <= 0.5 ? "now" : secs <= S.rules.alertSec ? "soon" : "far") + next.t : "none") + "|" + nb;
-  if (state !== lastAlertKey) { if (state.startsWith("soon") && !lastAlertKey.startsWith("soon")) beep(2); if (state.startsWith("now") && !lastAlertKey.startsWith("now")) beep(1); lastAlertKey = state; if (!inc) render(); return; }
+  if (state !== lastAlertKey) { if (state.startsWith("soon") && !lastAlertKey.startsWith("soon")) beep(2); if (state.startsWith("now") && !lastAlertKey.startsWith("now")) beep(1); lastAlertKey = state; if (!inc && mode === "match") render(); return; }
   const te = $("#time"); if (te) te.textContent = fmtClock(el);
   const re = $("#remain"); if (re) re.textContent = "Reste " + fmtClock(S.rules.qlen*60 - el);
   const pb = $("#progBar"); if (pb) pb.style.width = (el/(S.rules.qlen*60)*100).toFixed(2) + "%";
@@ -493,9 +500,82 @@ function tick(){
   const ce = $("#count"); if (ce && next && secs > 0.5 && !(Math.abs(next.t - C.q*S.rules.qlen)<1e-6 && secs > S.rules.alertSec)) ce.textContent = fmtClock(secs);
 }
 
+/* ---------- accueil ---------- */
+function homeView(){
+  const ready = !!S.plan, title = matchTitle();
+  return `<div class="card"><h2>Bienvenue${S.teamName ? ` au banc des ${esc(S.teamName)}` : ""}</h2>
+    <p style="margin:0">Cette app prépare tes changements pour que chaque joueur ait son temps de jeu, puis te prévient pendant le match : qui entre, qui sort et à quel poste.</p>
+  </div>
+  <div class="card"><h2>Prochain match</h2>
+    ${!S.squad.length ? `<p class="muted" style="margin:0 0 12px">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</p><button class="btn primary" id="hCoach">Créer mon équipe</button>`
+      : `<p style="margin:0 0 12px">${title ? `<b>${esc(title)}</b><br>` : ""}<span class="muted">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></p>
+      ${ready ? `<button class="btn go big" id="hMatch">Ouvrir le match ▸</button>` : `<button class="btn primary" id="hCoach">Préparer le match</button>`}`}
+  </div>
+  <div class="card"><h2>Comment ça marche</h2>
+    <ol class="steps">
+      <li><b>Coach</b> : crée ton équipe et tes joueurs, avec leurs postes.</li>
+      <li><b>Coach</b>, avant le match : coche les présents, choisis la compo de départ et génère le plan de rotation.</li>
+      <li><b>Match</b> : lance le chrono. ${+S.rules.alertSec} secondes avant chaque changement, l'app te prévient (son et écran).</li>
+      <li>Un blessé, un carton ? Touche « Imprévu » : le plan se recalcule tout seul.</li>
+      <li><b>Réglages</b> : son des alertes, thème, règles de rotation, code coach et sauvegarde.</li>
+    </ol>
+  </div>`;
+}
+function bindHome(){
+  $("#hCoach")?.addEventListener("click", () => goTo("coach"));
+  $("#hMatch")?.addEventListener("click", () => goTo("match"));
+}
+
+/* ---------- réglages ---------- */
+function segBtns(key, opts){ return `<div class="seg" role="group">${opts.map(([v,l]) => `<button data-pref="${key}" data-val="${v}" aria-pressed="${String(prefs[key]) === String(v)}">${esc(l)}</button>`).join("")}</div>`; }
+function settingsView(){
+  const locked = S.pin && !coachOK;
+  const rulesHtml = RULE_LABELS.map(([k,l,st]) => `<label>${esc(l)}<input type="number" step="${st}" data-rule="${k}" value="${S.rules[k]}"></label>`).join("");
+  return `<div class="card"><h2>L'app</h2>
+    <div class="set"><div><b>Son des alertes</b><div class="muted">Bip avant chaque changement. Sur iPhone, le bouton silencieux coupe le son.</div></div>
+      <div class="row" style="flex-shrink:0">${segBtns("sound", [[true,"Oui"],[false,"Non"]])}<button class="btn small" id="testSound">Tester</button></div></div>
+    <div class="set"><div><b>Vibreur</b><div class="muted">${canVibrate ? "Le téléphone vibre avant chaque changement." : "Pas disponible sur iPhone : Apple ne laisse pas les apps web faire vibrer le téléphone."}</div></div>
+      ${canVibrate ? segBtns("vibrate", [[true,"Oui"],[false,"Non"]]) : ""}</div>
+    <div class="set"><div><b>Thème</b><div class="muted">Auto suit le réglage du téléphone.</div></div>
+      ${segBtns("theme", [["auto","Auto"],["light","Clair"],["dark","Sombre"]])}</div>
+  </div>
+  ${locked ? pinView("Réglages coach", "Entre le code coach pour modifier les règles, le code et la sauvegarde.") : `
+  <div class="card"><h2>Règles de rotation</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Elles servent au prochain plan généré dans la page Coach.</p>
+    <div class="rules">${rulesHtml}</div>
+  </div>
+    <div class="card"><h2>Code coach</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Un code protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
+    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="ex. 1234" aria-label="Code coach" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
+      <button class="btn primary" id="pinSave">Enregistrer le code</button>
+      ${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}
+      <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
+  </div>
+    <div class="card"><h2>Sauvegarde</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil. Le code coach n'est pas dans le fichier.</p>
+    <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
+    ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
+  </div>`}`;
+}
+function bindSettings(){
+  const v = $("#view");
+  v.querySelectorAll("[data-pref]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.pref, val = b.dataset.val;
+    prefs[k] = val === "true" ? true : val === "false" ? false : val;
+    savePrefs(); applyTheme(); render();
+  }));
+  $("#testSound")?.addEventListener("click", () => { unlockAudio(); beep(2); });
+  if (S.pin && !coachOK) { bindPin(); return; }
+  v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
+  $("#pinSave").addEventListener("click", () => { S.pin = $("#pinSet").value.trim(); persist(); coachOK = true; render(); const m = $("#pinMsg"); if (m) m.textContent = S.pin ? "Code enregistré." : "Code supprimé."; });
+  $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
+  $("#bkOut")?.addEventListener("click", exportBackup);
+  $("#bkIn")?.addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); });
+}
+
 /* ---------- coach ---------- */
-function pinView(){ return `<div class="card pin"><h2>Mode coach</h2><p class="muted">Entre le code coach pour voir l'effectif et les temps de jeu.</p><input id="pinIn" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Code coach"><div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
-function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); $("#pinIn").focus(); }
+function pinView(title = "Page coach", text = "Entre le code coach pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p><input id="pinIn" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Code coach"><div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
+function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
 function coachView(){
   const T = computeTargets();
@@ -511,9 +591,8 @@ function coachView(){
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
   const pres = present();
   const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
-  const rulesHtml = RULE_LABELS.map(([k,l,st]) => `<label>${esc(l)}<input type="number" step="${st}" data-rule="${k}" value="${S.rules[k]}"></label>`).join("");
   return `
-  ${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Donne un nom à ton équipe, puis ajoute tes joueurs dans « Effectif ». Tu as déjà une sauvegarde ? Charge-la dans « Sauvegarde » plus bas.</p></div>` : ""}
+  ${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Donne un nom à ton équipe, puis ajoute tes joueurs dans « Effectif ». Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
   <div class="card"><h2>Équipe</h2>
     <div class="row"><input type="text" id="tName" value="${esc(S.teamName||"")}" placeholder="Nom de l'équipe, ex. Messieurs 1" aria-label="Nom de l'équipe" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600"></div>
   </div>
@@ -521,30 +600,14 @@ function coachView(){
     <div class="row"><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="Nom du match, ex. Wellington – Daring" aria-label="Nom du match" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600">
       <input type="date" id="mDate" value="${esc(S.matchDate||"")}" aria-label="Date du match" style="border:1px solid var(--rule);border-radius:8px;padding:7px 10px;background:var(--bg)"></div>
   </div>
-  <div class="card"><h2>Code coach</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Un code protège cet onglet. Les joueurs ne voient que l'onglet Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir cet onglet et voir les notes et les minutes."}</p>
-    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="ex. 1234" aria-label="Code coach" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
-      <button class="btn primary" id="pinSave">Enregistrer le code</button>
-      ${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}
-      <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
-  </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Effectif</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Coche les présents. Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Laisse « Minutes » vide pour un calcul automatique à partir des notes. Corners : D donneur, B bloqueur.</p>
     <div class="tbl-wrap"><table><thead><tr><th>Là</th><th>Nom</th><th>Postes</th><th>Note</th><th>Minutes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button><button class="btn" id="clearMin">Effacer les minutes fixées</button><span class="muted" style="font-size:.9rem">${pres.length} présents</span></div>
   </div>
-  <div class="grid2">
-    <div class="card"><h2>Système et compo de départ</h2>
+  <div class="card"><h2>Système et compo de départ</h2>
       <div class="row" style="margin-bottom:12px"><label for="preset" class="muted">Système</label><select id="preset" style="border:1px solid var(--rule);border-radius:8px;padding:6px 10px;background:var(--bg)">${Object.keys(PRESETS).map(k=>`<option ${k===S.preset?"selected":""}>${k}</option>`).join("")}</select></div>
-      <div class="pitch">${pitchLines()}${lineupSel}</div>
-    </div>
-    <div class="card"><h2>Règles</h2><div class="rules">${rulesHtml}</div>
-    </div>
-  </div>
-  <div class="card"><h2>Sauvegarde</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil. Le code coach n'est pas dans le fichier.</p>
-    <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
-    ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
+      <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>
   </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Saison</h2>
     <div class="row">${S.plan && !S.plan.savedAt ? `<button class="btn primary" id="saveMatchC">Enregistrer le match en cours</button>` : ""}</div></div>
@@ -588,14 +651,9 @@ function bindCoach(){
   $("#clearMin").addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); });
   $("#preset").addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
   v.querySelectorAll("[data-lu]").forEach(el => el.addEventListener("change", () => { const id = el.dataset.lu; for (const k in S.lineup) if (S.lineup[k] === el.value && k !== id) delete S.lineup[k]; if (el.value) S.lineup[id] = el.value; else delete S.lineup[id]; preview=null; persist(); render(); }));
-  v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
-  $("#pinSave").addEventListener("click", () => { S.pin = $("#pinSet").value.trim(); persist(); coachOK = true; render(); const m = $("#pinMsg"); if (m) m.textContent = S.pin ? "Code enregistré." : "Code supprimé."; });
-  $("#lockNow")?.addEventListener("click", () => { coachOK = false; mode = "match"; render(); });
   $("#pdfB")?.addEventListener("click", makePdf);
   $("#matchLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value; persist(); render(); });
   $("#tName")?.addEventListener("change", e => { S.teamName = e.target.value.trim(); persist(); render(); });
-  $("#bkOut")?.addEventListener("click", exportBackup);
-  $("#bkIn")?.addEventListener("change", e => { const f = e.target.files[0]; if (f) importBackup(f); });
   $("#mLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value.trim(); persist(); render(); });
   $("#mDate")?.addEventListener("change", e => { S.matchDate = e.target.value; persist(); render(); });
   $("#saveMatchC")?.addEventListener("click", saveMatch);
@@ -605,8 +663,8 @@ function bindCoach(){
 }
 
 /* ---------- boot ---------- */
-$("#tabMatch").addEventListener("click", () => { mode = "match"; render(); });
-$("#tabCoach").addEventListener("click", () => { mode = "coach"; render(); });
+document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => goTo(b.dataset.tab)));
+applyTheme();
 loadLocal();
 saveState = "Données de cet appareil";
 render(); paintSub();

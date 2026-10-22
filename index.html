@@ -39,10 +39,23 @@ button{cursor:pointer}
 .bar-in{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:12px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .brand{font:800 1.35rem/1 var(--display);text-transform:uppercase;letter-spacing:.03em;margin-right:auto}
 .brand small{display:block;font:500 .8rem var(--body);letter-spacing:0;text-transform:none;opacity:.8}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:9;display:flex;justify-content:center;background:var(--paper);border-top:1px solid var(--rule);padding:6px max(8px,env(safe-area-inset-left,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-right,0px))}
+.tabbar button{flex:1;max-width:160px;border:0;background:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0;font:700 .78rem var(--display);text-transform:uppercase;letter-spacing:.05em}
+.tabbar svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tabbar button[aria-current="page"]{color:var(--turf)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tabbar button[aria-current="page"]{color:var(--ink)}}
+:root[data-theme="dark"] .tabbar button[aria-current="page"]{color:var(--ink)}
+.steps{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:8px}
+.set{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--rule)}
+.set:first-of-type{border-top:0}
+.set .muted{font-size:.88rem}
+.seg{display:flex;background:var(--chip);border-radius:10px;padding:3px;flex-shrink:0}
+.seg button{border:0;background:none;border-radius:8px;padding:6px 10px;font:700 .9rem var(--display);text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .tabs{display:flex;background:rgba(255,255,255,.12);border-radius:999px;padding:3px}
 .tabs button{border:0;background:none;color:#fff;font:700 1rem var(--display);text-transform:uppercase;letter-spacing:.05em;padding:7px 16px;border-radius:999px}
 .tabs button[aria-pressed="true"]{background:#fff;color:var(--turf2)}
-main{max-width:1100px;margin:0 auto;padding-block:18px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+main{max-width:1100px;margin:0 auto;padding-block:18px calc(96px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
 .card{background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:16px;min-width:0}
 h2{font:800 1.2rem/1.1 var(--display);text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px;color:var(--turf)}
 :root:not([data-theme="light"]) h2{color:inherit}
@@ -100,7 +113,7 @@ h2{font:800 1.2rem/1.1 var(--display);text-transform:uppercase;letter-spacing:.0
 .nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding-top:10px;border-top:1px solid var(--rule)}
 .nav .btn{font-size:.9rem;padding:9px 6px}
 .banner{border-radius:12px;padding:12px 14px;font-size:1.05rem;color:#fff}
-.banner.vert{background:#178a3c}.banner.jaune{background:#e9b10d;color:#3b2a00}.banner.rouge{background:#c62f2f}.banner.bless{background:#5a6b7b}
+.banner.vert{background:#178a3c}.banner.jaune,.banner.jaune10{background:#e9b10d;color:#3b2a00}.banner.rouge{background:#c62f2f}.banner.bless{background:#5a6b7b}
 .btn.warnb{background:#ffe8b8;color:#5a3a00}
 .live{font:700 .85rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--in)}
 .incp{border:2px solid var(--warn)}
@@ -179,7 +192,7 @@ tr.absent td:not(:first-child){opacity:.45}
 .trk{position:relative;height:18px;background:var(--bg);border-radius:4px}
 .trk i{position:absolute;top:0;bottom:0;border-radius:3px;color:#fff;font:700 .72rem/18px var(--display);text-align:center;font-style:normal;overflow:hidden}
 .trk .q{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.3}
-.pin{display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px 0}
+.pin{display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px 16px;text-align:center}
 .pin input{font:800 2rem var(--display);width:160px;text-align:center;letter-spacing:.4em;border:2px solid var(--rule);border-radius:12px;padding:8px;background:var(--paper)}
 .save{font-size:.82rem;color:var(--muted)}
 .empty{padding:30px 10px;text-align:center}
@@ -187,13 +200,15 @@ tr.absent td:not(:first-child){opacity:.45}
 
 <div class="bar"><div class="bar-in">
   <div class="brand"><span id="brandName">Banc</span><small id="sub">Plan de rotation</small></div>
-  <div class="tabs" role="group" aria-label="Mode">
-    <button id="tabMatch" aria-pressed="true">Match</button>
-    <button id="tabCoach" aria-pressed="false">Coach</button>
-  </div>
 </div></div>
 
 <main id="view"></main>
+<nav class="tabbar" aria-label="Pages">
+  <button data-tab="home" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><span>Accueil</span></button>
+  <button data-tab="match" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="7"/><path d="M12 14l3-3"/><path d="M10 3h4"/><path d="M12 3v4"/></svg><span>Match</span></button>
+  <button data-tab="coach" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M8.5 10h7M8.5 14h7M8.5 18h4"/></svg><span>Coach</span></button>
+  <button data-tab="settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Réglages</span></button>
+</nav>
 
 <script src="rotation.js"></script>
 <script src="app.js"></script>
