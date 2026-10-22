@@ -579,8 +579,8 @@ function onboardView(){
   return `<div class="card onb"><h2>Bienvenue sur Banc</h2>
     <p style="margin:0">L'app qui prépare tes changements et te prévient pendant le match. Pour commencer, présente-toi :</p>
     <div class="form">${profileFields()}
-      <label class="fld"><span>Code de verrouillage (6 chiffres)</span><input type="password" inputmode="numeric" maxlength="6" id="pinNew" autocomplete="off" placeholder="••••••"></label></div>
-    <p class="muted" style="margin:0;font-size:.88rem">Ce code ouvre la partie coach. Les joueurs peuvent utiliser l'app sans voir les notes ni les temps de jeu.</p>
+      <label class="fld"><span>Code de verrouillage (4 ou 6 chiffres)</span><input type="password" inputmode="numeric" maxlength="6" id="pinNew" autocomplete="off" placeholder="••••••"></label></div>
+    <p class="muted" style="margin:0;font-size:.88rem">À quoi il sert : il ferme la partie coach (effectif, notes, temps de jeu visés, réglages). Tu peux donc prêter le téléphone à un joueur ou à ton assistant : ils voient l'Accueil et le Match, mais pas les notes.</p>
     ${onboardMsg ? `<div class="warn">${esc(onboardMsg)}</div>` : ""}
     <button class="btn go big" id="onbGo">Je commence</button>
   </div>
@@ -594,7 +594,7 @@ function bindOnboard(){
   $("#codeOk")?.addEventListener("click", () => { newCode = null; goTo("home"); render(); });
   $("#onbGo")?.addEventListener("click", () => {
     const pin = $("#pinNew").value.trim();
-    if (!/^\d{6}$/.test(pin)) { onboardMsg = "Choisis un code de verrouillage de 6 chiffres."; render(); return; }
+    if (!/^(\d{4}|\d{6})$/.test(pin)) { onboardMsg = "Choisis un code de verrouillage de 4 ou 6 chiffres."; render(); return; }
     if (!readProfile()) { onboardMsg = "Indique au moins ton prénom et ton équipe."; render(); return; }
     onboardMsg = ""; S.pin = pin;
     if (!S.coachId) S.coachId = genCoachId();
@@ -657,8 +657,8 @@ function settingsView(){
     <p class="muted" style="margin:10px 0 0;font-size:.92rem">Ton identifiant. Bientôt, avec ton code de verrouillage, il te permettra de retrouver ton équipe sur un autre téléphone.</p>
   </div>` : ""}
     <div class="card"><h2>Code de verrouillage</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Ce code à 6 chiffres protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
-    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="6 chiffres" aria-label="Code de verrouillage" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Ce code protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
+    <div class="row"><input type="text" inputmode="numeric" maxlength="6" id="pinSet" value="${esc(S.pin)}" placeholder="4 ou 6 chiffres" aria-label="Code de verrouillage" style="font:800 1.4rem var(--display);width:130px;text-align:center;letter-spacing:.2em;border:2px solid var(--rule);border-radius:10px;padding:6px;background:var(--bg)">
       <button class="btn primary" id="pinSave">Enregistrer le code</button>
       ${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}
       <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
@@ -679,7 +679,7 @@ function bindSettings(){
   $("#testSound")?.addEventListener("click", () => { unlockAudio(); beep(2); });
   if (S.pin && !coachOK) { bindPin(); return; }
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
-  $("#pinSave").addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!/^\d{6}$/.test(c)) { $("#pinMsg").textContent = "Le code doit faire 6 chiffres."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
+  $("#pinSave").addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!/^(\d{4}|\d{6})$/.test(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
   $("#profSave").addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
   $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
   $("#bkOut")?.addEventListener("click", exportBackup);
