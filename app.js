@@ -273,7 +273,7 @@ function doIncident(){
   const type = inc.type, p = inc.player, info = INC[type] || {d:0};
   const seg = segAt(S.plan, T);
   const o = replanBase(T);
-  let extra = null;
+  let extra = null, res0 = null;
   if (type === "libre") o.swap = {out: p, in: inc.inP, pos: inc.pos || null};
   if (type === "bless") {
     o.out.push(p);
@@ -281,12 +281,18 @@ function doIncident(){
     if (inc.inP && q) {
       o.enter = {name: inc.inP, pos: q};
       const pl = o.players.find(x => x.name === inc.inP);
-      if (!pl.pos.includes(q)) { pl.pos = [...pl.pos, q]; extra = q; }
+      if (!pl.pos.includes(q)) {
+        // Hors poste : on essaie d'abord de réorganiser le terrain (il prend un poste qu'il connaît,
+        // un joueur déjà sur le terrain glisse au poste du blessé). Sinon il joue hors poste.
+        const re = R.replan(S.plan, {...o, enter: {name: inc.inP, pos: null}});
+        if (!re.error) res0 = re;
+        else { pl.pos = [...pl.pos, q]; extra = q; }
+      }
     }
   }
   if (type === "rouge") { o.out.push(p); o.vacate.push(seg.on[p]); }
   if (timedCard(type)) { o.freezeUntil = Math.min(S.rules.quarters*S.rules.qlen, T + info.d); o.freezeOut = [p]; if (!inc.catchUp) o.adjust[p] = -info.d; }
-  const res = R.replan(S.plan, o);
+  const res = res0 || R.replan(S.plan, o);
   if (res.error) { incMsg = res.warnings.join(" "); incBusy = false; render(); return; }
   res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, extraPos: extra, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
   // Une règle ne peut pas être tenue : on montre pourquoi avant d'appliquer.
@@ -336,7 +342,7 @@ function incidentPanel(seg){
   if (q && inc.inP === undefined) inc.inP = subs[0]?.name || null;
   const subHtml = q ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui le remplace au poste ${pill(q)} ${esc(posName(q))} ?</div>
     <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && x.knows ? " <small>conseillé</small>" : x.knows ? "" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
-    ${inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} jouera ${esc(posName(q))} jusqu'à la fin du match.</div>` : ""}` : "";
+    ${inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} ne joue pas ${esc(posName(q).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(q).toLowerCase())} jusqu'à la fin du match.</div>` : ""}` : "";
   return `<div class="card incp"><h2>Imprévu</h2>
     <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quel joueur ?</div>
