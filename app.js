@@ -124,6 +124,7 @@ function generate(seed){
     if (!best || p.warnings.length < best.warnings.length || (p.warnings.length === best.warnings.length && p.score < best.score)) best = p;
     if (!best.warnings.length) break;
   }
+  if (best) best.timeMode = timeMode();
   return best;
 }
 let _vcPlan = null, _vc = [];
@@ -274,7 +275,7 @@ function replanBase(T){
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
 }
-function applyPlan(res){ if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
+function applyPlan(res){ if (S.plan?.timeMode) res.timeMode = S.plan.timeMode; if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
 function endInjury(n){
   const T = Math.floor(matchT()*10)/10;
   const o = replanBase(T); o.out = o.out.filter(x => x !== n);
@@ -872,6 +873,8 @@ function coachView(){
       <input type="date" id="mDate" value="${esc(S.matchDate||"")}" aria-label="Date du match" style="border:1px solid var(--rule);border-radius:8px;padding:7px 10px;background:var(--bg)"></div>
     <div class="set" style="margin-top:12px"><span>Temps de jeu</span><div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div></div>
     <p class="muted" style="margin:6px 0 0;font-size:.9rem">${({notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."})[timeMode()]}</p>
+    ${(() => { const fixed = present().filter(p => +p.minutes > 0 && p.pos.some(q => q !== "G")); return fixed.length ? `<div class="warn" style="margin-top:8px">${fixed.length === present().filter(p => p.pos.some(q => q !== "G")).length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
+    ${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:8px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan (en bas de la page) puis touche « Utiliser pour le match ».</div>` : ""}
   </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Effectif</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Coche les présents. Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Laisse « Minutes » vide pour un calcul automatique à partir des notes. Corners : D donneur, B bloqueur.</p>
@@ -898,12 +901,13 @@ function previewHtml(){
   if (!plan) return `<p class="muted">Clique sur « Générer le plan » une fois l'effectif et la compo prêts.</p>`;
   if (plan.error) return `<div class="warn">${plan.warnings.map(w => esc(nicePos(w))).join("<br>")}</div>`;
   const tag = preview ? `<div class="warn" style="background:var(--chip);color:var(--ink)">Nouvelle version, pas encore utilisée pour le match.</div>` : `<div class="ok">Plan actif pour le match.</div>`;
+  const modeTag = `<div class="muted" style="margin-top:6px;font-size:.9rem">Temps de jeu : ${esc(TIME_MODES.find(m => m[0] === (plan.timeMode || "notes"))[1])}</div>`;
   const warn = plan.warnings.length ? `<div class="warn" style="margin-top:8px">${plan.warnings.map(w => esc(nicePos(w))).join("<br>")}</div>` : `<div class="ok" style="margin-top:8px">Toutes les règles sont respectées. ${plan.changes.length} fenêtres de changement.</div>`;
   const names = Object.keys(plan.played).sort((a,b)=>plan.played[b]-plan.played[a]);
   const END = S.rules.quarters*S.rules.qlen;
   const rec = names.map(n => { const d = plan.played[n]-plan.targets[n]; return `<tr><td>${esc(n)}</td><td>${R.fmtMin(plan.played[n])}</td><td class="muted">${R.fmtMin(plan.targets[n])}</td><td class="dev" style="color:${Math.abs(d)<=1.5?"var(--in)":"var(--out)"}">${d>=0?"+":"−"}${R.fmtMin(Math.abs(d))}</td></tr>`; }).join("");
   const tl = names.map(n => `<div class="tlr"><div>${esc(n)}</div><div class="trk">${plan.segs.map(s => s.on[n] ? `<i style="left:${s.a/END*100}%;width:${(s.b-s.a)/END*100}%;background:var(--${posMeta(s.on[n]).line})">${(s.b-s.a)>=2.5?esc(posShort(s.on[n])):""}</i>` : "").join("")}${[1,2,3].map(k=>`<span class="q" style="left:${k*25}%"></span>`).join("")}</div></div>`).join("");
-  return `${tag}${warn}<div class="grid2" style="margin-top:12px"><div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Prévu</th><th>Visé</th><th>Écart</th></tr></thead><tbody>${rec}</tbody></table></div><div class="tl"><div class="tl-in">${tl}</div></div></div>`;
+  return `${tag}${modeTag}${warn}<div class="grid2" style="margin-top:12px"><div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Prévu</th><th>Visé</th><th>Écart</th></tr></thead><tbody>${rec}</tbody></table></div><div class="tl"><div class="tl-in">${tl}</div></div></div>`;
 }
 function bindCoach(){
   const v = $("#view");
@@ -921,7 +925,7 @@ function bindCoach(){
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
   $("#addP").addEventListener("click", () => { S.squad.push({name:"Nouveau joueur",pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
-  $("#clearMin").addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); });
+  ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
   $("#preset").addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
   v.querySelectorAll("[data-lu]").forEach(el => el.addEventListener("change", () => { const id = el.dataset.lu; for (const k in S.lineup) if (S.lineup[k] === el.value && k !== id) delete S.lineup[k]; if (el.value) S.lineup[id] = el.value; else delete S.lineup[id]; preview=null; persist(); render(); }));
   $("#pdfB")?.addEventListener("click", makePdf);
