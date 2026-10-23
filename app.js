@@ -83,7 +83,11 @@ function persist(){ if (ADJ) return; saveLocal(); markChanged(); liveChanged(); 
 function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "StickMate"; }
 const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
 // Barre du haut sur une ligne : l'équipe à gauche ; à droite le match ouvert (page Match, adjoint) ou l'état de la sauvegarde.
-function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = S.teamName || S.profile?.club || "StickMate"; document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
+// Logo StickMate : l'icône (flèches du changement autour de la balle) et le nom avec le i en crosse.
+const LOGO_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M21.8 39.7A30 30 0 0 1 76 35M77.6 23.7 76 35 65.4 30.7" fill="none" stroke="#4ee08f" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M78.2 60.3A30 30 0 0 1 24 65M34.6 69.3 24 65 22.4 76.3" fill="none" stroke="#ff7a6e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="50" r="11" fill="#f6b81c"/></svg>`;
+const WORDMARK = `<span class="wm">St<svg class="wm-i" viewBox="0 0 30 100" aria-hidden="true"><path d="M16 30 15 78Q14 95 1 92" fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="9" r="9.5" fill="#f6b81c"/></svg>ck<span class="wm-mate">Mate</span></span>`;
+const logoLockup = () => `<div class="lockup" role="img" aria-label="StickMate"><span class="logo">${LOGO_SVG}</span>${WORDMARK}</div>`;
+function paintSub(){ const bn = $("#brandName"); if (bn) { const t = S.teamName || S.profile?.club; if (t) bn.textContent = t; else bn.innerHTML = WORDMARK; } document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
  const el = $("#sub"); if (!el) return;
  if (ADJ) { el.innerHTML = `${matchTitle() ? `<b>${esc(S.matchLabel || matchTitle())}</b>` : "Adjoint"}<span>${esc(adjointSub())}</span>`; return; }
  el.innerHTML = mode === "match" && S.matchLabel ? `<b>${esc(S.matchLabel)}</b><span>${esc(fmtDate(S.matchDate))}</span>` : `<span>${esc(saveState)}</span>`; paintSave(); }

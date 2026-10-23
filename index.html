@@ -43,7 +43,16 @@ button{cursor:pointer}
 .bar::after{right:-60px;left:auto;bottom:-170px;transform:none}
 .bar-in{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:12px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .brand{display:flex;align-items:center;gap:10px;font:800 1.15rem/1.1 var(--display);letter-spacing:-.01em;margin-right:auto;position:relative;z-index:1}
-.brand svg{width:20px;height:24px;flex-shrink:0}
+.brand .logo{width:32px;height:32px;border-radius:9px;background:#0f1d33;display:grid;place-items:center;flex-shrink:0}
+.brand .logo svg{width:27px;height:27px}
+.brand .wm{font-size:1.3rem}
+.wm{font-style:italic;font-weight:800;letter-spacing:-.03em;white-space:nowrap}
+.wm-i{display:inline-block;width:.3em;height:.98em;vertical-align:-.2em;overflow:visible;transform:skewX(-10deg);margin:0 .01em}
+.bar .wm-mate{opacity:.72}
+.lockup{display:flex;align-items:center;gap:12px;font:800 2rem/1 var(--display);color:var(--ink)}
+.lockup .logo{width:52px;height:52px;border-radius:13px;background:#0d5fa8;display:grid;place-items:center;flex-shrink:0}
+.lockup .logo svg{width:44px;height:44px}
+.lockup .wm-mate{color:var(--clubink)}
 .bar-sub{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-end;text-align:right;font-size:.8rem;line-height:1.25;min-width:0;max-width:55%}
 .bar-sub b{font-weight:700;font-size:.85rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar-sub span{opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -338,7 +347,7 @@ tr.absent td:not(:first-child){opacity:.45}
 </style>
 
 <div class="bar"><div class="bar-in">
-  <div class="brand"><svg viewBox="0 0 22 26" aria-hidden="true"><path d="M13 1 L13 17 Q13 23 7 23 Q3 23 3 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="18" cy="21" r="2.8" fill="currentColor"/></svg><span id="brandName">StickMate</span></div>
+  <div class="brand"><span class="logo"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M21.8 39.7A30 30 0 0 1 76 35M77.6 23.7 76 35 65.4 30.7" fill="none" stroke="#4ee08f" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M78.2 60.3A30 30 0 0 1 24 65M34.6 69.3 24 65 22.4 76.3" fill="none" stroke="#ff7a6e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="50" r="11" fill="#f6b81c"/></svg></span><span id="brandName">StickMate</span></div>
   <div class="bar-sub" id="sub"></div>
 </div></div>
 
@@ -350,12 +359,12 @@ tr.absent td:not(:first-child){opacity:.45}
   <button data-tab="settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Réglages</span></button>
 </nav>
 
-<script src="vendor/supabase.js?v=21"></script>
-<script src="config.js?v=21"></script>
-<script src="rotation.js?v=21"></script>
-<script src="vendor/qrcode.js?v=21"></script>
-<script src="cloud.js?v=21"></script>
-<script src="live.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="vendor/supabase.js?v=22"></script>
+<script src="config.js?v=22"></script>
+<script src="rotation.js?v=22"></script>
+<script src="vendor/qrcode.js?v=22"></script>
+<script src="cloud.js?v=22"></script>
+<script src="live.js?v=22"></script>
+<script src="app.js?v=22"></script>
 
 </body></html>
