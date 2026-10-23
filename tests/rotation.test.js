@@ -127,3 +127,44 @@ test("temps égal par ligne : chaque ligne partage ses postes, jamais plus que l
   assert.strictEqual(t.M1, 70);
   assert.strictEqual(t.A1, 70);
 });
+
+// ---------- règles par période (quart ou mi-temps) ----------
+const inWindow = (r, t) => {
+  const q = Math.min(r.quarters - 1, Math.floor(t / r.qlen + EPS)), m = t - q * r.qlen;
+  if (Math.abs(m) < EPS) return q > 0 && R.rq(r, q, "breakChanges");
+  return m >= R.rq(r, q, "startBlock") - EPS && m <= r.qlen - R.rq(r, q, "endBlock") + EPS;
+};
+const planWith = r => R.buildPlan({positions, players, lineup: ex.lineup, rules: r, seed: 4242, iters: 150, saIters: 25000, chains: 2});
+
+test("ancien format : le 1er changement du Q1 devient une exception du Q1", () => {
+  const m = R.migrateRules({...rules, firstChange: 6, startBlock: 4});
+  assert.deepStrictEqual(m.per, {0: {startBlock: 6}});
+  assert.strictEqual(R.rq(m, 0, "startBlock"), 6);
+  assert.strictEqual(R.rq(m, 1, "startBlock"), 4);
+  assert.deepStrictEqual(R.migrateRules({firstChange: 4, startBlock: 4}).per, {});
+  assert.deepStrictEqual(R.migrateRules(m).per, {0: {startBlock: 6}}, "migrer deux fois ne change rien");
+});
+
+test("exceptions par quart : fenêtres, entrées max et pause respectées", () => {
+  const r = R.migrateRules({...rules, per: {0: {startBlock: 6}, 2: {breakChanges: false}, 3: {endBlock: 6, maxEntries: 2}}});
+  const times = R.changeTimes(r);
+  assert.ok(!times.some(t => Math.abs(t - 2 * r.qlen) < EPS), "pas de changement à la pause avant le Q3");
+  assert.ok(times.some(t => Math.abs(t - r.qlen) < EPS), "changement possible à la pause avant le Q2");
+  assert.ok(!times.some(t => t > 3 * r.qlen + r.qlen - 6 + EPS), "rien dans les 6 dernières minutes du Q4");
+  const pl = planWith(r);
+  assert.ok(!pl.error, String(pl.warnings));
+  for (const c of pl.changes) {
+    assert.ok(inWindow(r, c.t), `changement à ${c.t}`);
+    const q = Math.min(3, Math.floor(c.t / r.qlen + EPS));
+    assert.ok(c.ins.length <= R.rq(r, q, "maxEntries"), `${c.ins.length} entrées à ${c.t}`);
+  }
+});
+
+test("match en 2 mi-temps : 11 joueurs, changements dans les fenêtres, banc max par mi-temps", () => {
+  const r = R.migrateRules({...rules, quarters: 2, qlen: 35, maxBench: 18, per: {0: {startBlock: 6}}});
+  const pl = planWith(r);
+  assert.ok(!pl.error, String(pl.warnings));
+  for (const s of pl.segs) assert.strictEqual(Object.keys(s.on).length, 11);
+  for (const c of pl.changes) assert.ok(inWindow(r, c.t), `changement à ${c.t}`);
+  assert.strictEqual(pl.segs[pl.segs.length - 1].b, 70);
+});
