@@ -10,8 +10,10 @@ SQL Editor > New query > coller tout `schema.sql` > Run. Le message attendu est 
 
 Authentication > URL Configuration :
 
-- Site URL : `https://geoffreyducobu-zaid.github.io/banc-hockey/`
-- Redirect URLs > Add URL : `https://geoffreyducobu-zaid.github.io/banc-hockey/**`
+- Site URL : `https://stickmate.be/`
+- Redirect URLs > Add URL : `https://stickmate.be/**` et `https://www.stickmate.be/**`
+
+L'app est servie sur `stickmate.be` depuis le 23/10/2026 (nom acheté chez OVH, fichier `CNAME` à la racine du dépôt). L'ancienne adresse `https://geoffreyducobu-zaid.github.io/banc-hockey/**` peut rester dans les Redirect URLs quelque temps, pour les mails déjà envoyés.
 
 Sans ça, le lien de confirmation et celui du mot de passe oublié renvoient vers une page qui ne marche pas.
 
