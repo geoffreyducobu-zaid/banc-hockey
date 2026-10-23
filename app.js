@@ -183,6 +183,67 @@ function ensureMatches(){
   S.matches.forEach(m => { if (!m.id) m.id = newId(); });
   if (!S.curMatch) S.curMatch = newId();
   if (!S.matches.some(m => m.id === S.curMatch)) S.matches.push(curMatchRec());
+  ensureTeams();
+}
+/* ---------- plusieurs équipes ---------- */
+// L'équipe ouverte vit dans S (nom, effectif, règles, matchs) et sa saison dans banc-season.
+// Les autres équipes sont rangées complètes dans S.teams ; l'équipe ouverte n'y a qu'une fiche {id, teamName}.
+let newTeamForm = false;
+function ensureTeams(){
+  if (!Array.isArray(S.teams)) S.teams = [];
+  if (!S.curTeam) S.curTeam = newId();
+  if (!S.teams.some(t => t.id === S.curTeam)) S.teams.unshift({id:S.curTeam, teamName:S.teamName || ""});
+}
+const localSeasonL = () => { try { return JSON.parse(localStorage.getItem("banc-season") || "[]"); } catch(e){ return []; } };
+function curTeamRec(){
+  storeCur();
+  return JSON.parse(JSON.stringify({id:S.curTeam, teamName:S.teamName || "", squad:S.squad, rules:S.rules, matches:S.matches, curMatch:S.curMatch, season:localSeasonL()}));
+}
+const teamLabel = t => (t.id === S.curTeam ? S.teamName : t.teamName) || "Équipe sans nom";
+function openTeam(id){
+  if (id === S.curTeam) return;
+  const r = S.teams.find(t => t.id === id); if (!r) return;
+  if (C.running) { C.elapsed = clockElapsed(); C.running = false; }
+  const cur = curTeamRec();
+  S.teams = S.teams.map(t => t.id === cur.id ? cur : t.id === id ? {id, teamName:r.teamName || ""} : t);
+  S.curTeam = id; S.teamName = r.teamName || ""; S.squad = r.squad || [];
+  S.rules = {...DEFAULT_RULES, ...(r.rules || {})};
+  S.matches = r.matches || []; S.curMatch = r.curMatch || null;
+  try { localStorage.setItem("banc-season", JSON.stringify(r.season || [])); } catch(e){}
+  season = null; preview = null; inc = null;
+  if (S.matches.some(m => m.id === S.curMatch)) openMatch(S.curMatch, false);
+  else if (S.matches.length) openMatch(sortedMatches()[0].id, false);
+  else {
+    // Équipe sans match : un match vide, prêt à préparer.
+    S.curMatch = null; S.matchLabel = ""; S.matchDate = ""; S.lineup = {}; S.plan = S.prevPlan = S.basePlan = null; S.sheet = {us:[], them:[], pc:0, log:[]};
+    C = freshClock(); ensureMatches(); persist(); pushClock();
+  }
+}
+function createTeam(name){
+  const id = newId();
+  S.teams.push({id, teamName:name, squad:[], rules:{...S.rules}, matches:[], curMatch:null, season:[]});
+  openTeam(id);
+}
+function removeTeam(id){
+  if (S.teams.length < 2) return;
+  if (id === S.curTeam) openTeam(S.teams.find(t => t.id !== id).id);
+  S.teams = S.teams.filter(t => t.id !== id); persist();
+}
+function teamBar(){
+  if (newTeamForm) return `<div class="card"><h2 style="margin:0 0 8px">Nouvelle équipe</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.9rem">Elle aura son effectif, ses matchs et sa saison. Elle reprend tes règles actuelles.</p>
+    <div class="row"><input type="text" id="ntName" placeholder="Nom de l'équipe, ex. Dames 1" aria-label="Nom de l'équipe" style="flex:1;min-width:180px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg)">
+    <button class="btn primary" id="ntGo">Créer</button><button class="btn" id="ntCancel">Annuler</button></div></div>`;
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes équipes</h2><button class="btn small" id="ntOpen">+ Nouvelle équipe</button></div>
+    <div class="seg" role="group" style="margin-top:10px;flex-wrap:wrap">${S.teams.map(t => `<button data-team="${esc(t.id)}" aria-pressed="${t.id === S.curTeam}">${esc(teamLabel(t))}</button>`).join("")}</div>
+    ${S.teams.length > 1 ? `<div style="margin-top:8px"><button class="btn small" id="ntDel">Supprimer « ${esc(teamLabel({id:S.curTeam}))} »</button></div>` : ""}</div>`;
+}
+function bindTeams(){
+  document.querySelectorAll("[data-team]").forEach(b => b.addEventListener("click", () => { openTeam(b.dataset.team); render(); }));
+  $("#ntOpen")?.addEventListener("click", () => { newTeamForm = true; render(); $("#ntName")?.focus(); });
+  $("#ntCancel")?.addEventListener("click", () => { newTeamForm = false; render(); });
+  $("#ntGo")?.addEventListener("click", () => { const n = $("#ntName").value.trim(); if (!n) { $("#ntName").focus(); return; } newTeamForm = false; createTeam(n); coachTab = "squad"; render(); });
+  $("#ntDel")?.addEventListener("click", function(){ if (this.dataset.armed) { removeTeam(S.curTeam); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Son effectif, ses matchs et sa saison seront effacés. Touche encore"; } });
 }
 function storeCur(){ const i = S.matches.findIndex(m => m.id === S.curMatch); if (i >= 0) S.matches[i] = curMatchRec(); else S.matches.push(curMatchRec()); }
 function openMatch(id, store = true){
@@ -437,7 +498,7 @@ function importBackup(file){
     try {
       const d = JSON.parse(rd.result);
       if (d.app !== "banc-hockey" || !d.state || !Array.isArray(d.state.squad)) throw new Error("format");
-      const pin = S.pin; applyData(d.state); S.pin = pin; S.matches = d.state.matches; S.curMatch = d.state.curMatch; ensureMatches();
+      const pin = S.pin; applyData(d.state); S.pin = pin; S.matches = d.state.matches; S.curMatch = d.state.curMatch; S.teams = d.state.teams; S.curTeam = d.state.curTeam; ensureMatches();
       if (Array.isArray(d.season)) localStorage.setItem("banc-season", JSON.stringify(d.season));
       season = null; preview = null; persist();
       backupMsg = `Sauvegarde du ${d.savedAt || "?"} rechargée : ${d.state.squad.length} joueurs.`;
@@ -871,7 +932,7 @@ function step(id, n, done, title, summary, body){
 function coachView(){
   if (!S.squad.length && coachTab === "match") coachTab = "squad";
   const tabs = `<div class="seg seg-full seg-top" role="tablist">${[["match","Match"],["squad","Effectif"],["season","Saison"]].map(([k,l]) => `<button role="tab" data-ctab="${k}" aria-selected="${coachTab===k}" aria-pressed="${coachTab===k}">${l}</button>`).join("")}</div>`;
-  return tabs + (coachTab === "squad" ? squadTab() : coachTab === "season" ? seasonTab() : matchPrepTab());
+  return teamBar() + tabs + (coachTab === "squad" ? squadTab() : coachTab === "season" ? seasonTab() : matchPrepTab());
 }
 function squadTab(){
   const rows = S.squad.map((p,i) => `<tr>
@@ -943,6 +1004,7 @@ function previewHtml(){
 }
 function bindCoach(){
   const v = $("#view");
+  bindTeams();
   v.querySelectorAll("[data-i]").forEach(el => el.addEventListener("change", () => {
     const p = S.squad[+el.dataset.i], k = el.dataset.k;
     if (k === "present") p.present = el.checked;
