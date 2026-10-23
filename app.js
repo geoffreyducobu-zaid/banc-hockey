@@ -87,6 +87,9 @@ const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toL
 const LOGO_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M21.8 39.7A30 30 0 0 1 76 35M77.6 23.7 76 35 65.4 30.7" fill="none" stroke="#4ee08f" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M78.2 60.3A30 30 0 0 1 24 65M34.6 69.3 24 65 22.4 76.3" fill="none" stroke="#ff7a6e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="50" r="11" fill="#f6b81c"/></svg>`;
 const WORDMARK = `<span class="wm">St<svg class="wm-i" viewBox="0 0 30 100" aria-hidden="true"><path d="M16 30 15 78Q14 95 1 92" fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="9" r="9.5" fill="#f6b81c"/></svg>ck<span class="wm-mate">Mate</span></span>`;
 const COPYRIGHT = "© 2026 Geoffrey Ducobu. StickMate, tous droits réservés.";
+// Adresse de contact (boîte OVH du domaine stickmate.be), montrée aux coachs en bas des pages.
+const CONTACT = "contact@stickmate.be";
+const contactLine = (style = "margin:0 4px") => `<p class="muted" style="font-size:.85rem;${style}">Un problème, une question, une idée ? Écris-moi : <a href="mailto:${CONTACT}">${CONTACT}</a></p>`;
 const logoLockup = () => `<div class="lockup" role="img" aria-label="StickMate"><span class="logo">${LOGO_SVG}</span>${WORDMARK}</div>`;
 function paintSub(){ const bn = $("#brandName"); if (bn) { const t = S.teamName || S.profile?.club; if (t) bn.textContent = t; else bn.innerHTML = WORDMARK; } document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
  const el = $("#sub"); if (!el) return;
@@ -889,11 +892,11 @@ function homeView(){
   const ready = !!S.plan, title = matchTitle(), hi = `Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !`;
   if (!S.squad.length) return pinNudge() + `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
   <button class="btn dark big" id="hCoach">Créer mon équipe →</button>
-  ${accountNudge()}${howTo()}`;
+  ${accountNudge()}${howTo()}${contactLine()}`;
   return pinNudge() + `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
   <div class="tiles"><div class="tile"><b>${present().length}</b><span>présents</span></div><div class="tile"><b>${ready ? visChanges(S.plan).length : "–"}</b><span>changements</span></div><div class="tile"><b>${esc(S.preset)}</b><span>système</span></div></div>
   ${ready ? `<button class="btn dark big" id="hMatch">Ouvrir le match →</button>` : `<button class="btn primary big" id="hCoach">Préparer le match →</button>`}
-  ${accountNudge()}${S.plan ? "" : howTo()}`;
+  ${accountNudge()}${S.plan ? "" : howTo()}${contactLine()}`;
 }
 // Sans code, les notes et les temps visés sont visibles par tous : on le demande dès l'Accueil.
 function pinNudge(){
@@ -971,6 +974,8 @@ function settingsView(){
       ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}`)}
   </div>`}
   <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>
+  ${contactLine()}
+  ${CLOUD_ON ? privacyDetails("margin:0 4px") : ""}
   <p class="muted" style="font-size:.8rem;margin:0 4px">${COPYRIGHT}</p>`;
 }
 function bindSettings(){
