@@ -151,7 +151,12 @@ function shareCard(){
 }
 function liveButton(){
   if (!LIVE_ON || ADJ) return "";
-  return `<button class="btn" id="shOpen">📲 Adjoint</button><span class="live ${liveOK && liveAdj ? "on" : ""}" id="liveBadge">${liveOK && liveAdj ? "● Adjoint connecté" : ""}</span>`;
+  return `<button class="btn" id="shOpen">📲 Adjoint</button>`;
+}
+// Petit voyant dans le chrono quand l'adjoint suit le match.
+function liveBadge(){
+  if (!LIVE_ON || ADJ) return "";
+  return `<span class="live ${liveOK && liveAdj ? "on" : ""}" id="liveBadge">${liveOK && liveAdj ? "● Adjoint" : ""}</span>`;
 }
 function bindShare(){
   $("#shOpen")?.addEventListener("click", shareStart);
@@ -162,7 +167,7 @@ function bindShare(){
 }
 function paintLive(){
   const st = $("#liveState"); if (st) st.textContent = liveStatusText();
-  const b = $("#liveBadge"); if (b) { const on = liveOK && liveAdj > 0; b.textContent = on ? "● Adjoint connecté" : ""; b.classList.toggle("on", on); }
+  const b = $("#liveBadge"); if (b) { const on = liveOK && liveAdj > 0; b.textContent = on ? "● Adjoint" : ""; b.classList.toggle("on", on); }
   if (ADJ) paintSub();
 }
 
