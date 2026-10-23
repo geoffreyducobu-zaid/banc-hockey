@@ -37,7 +37,9 @@ function clubPalette(h){
   if (!hexOk(h)) h = DEFAULT_COLOR;
   const club2 = lum(h) > 0.4 ? h : mix(h, "#000000", 0.15);
   return {club:h, club2, onclub:onColor(h), onclub2:onColor(club2),
-    "clubink-l":readableOn(h, "#ffffff", "#000000", 4.5), "clubink-d":readableOn(h, "#132130", "#ffffff", 4.5)};
+    "clubink-l":readableOn(h, "#ffffff", "#000000", 4.5), "clubink-d":readableOn(h, "#132130", "#ffffff", 4.5),
+    // version de la couleur lisible sur la carte bleu nuit du prochain changement, et voile pour les pastilles posées sur la couleur
+    "clubink-n":readableOn(h, "#1c2f48", "#ffffff", 4.5), clubchip: onColor(h) === "#ffffff" ? "rgba(255,255,255,.2)" : "rgba(11,20,38,.14)"};
 }
 let appliedColor = "";
 function applyColor(){
@@ -46,7 +48,7 @@ function applyColor(){
   appliedColor = h;
   const p = clubPalette(h), st = document.documentElement.style;
   Object.entries(p).forEach(([k,v]) => st.setProperty("--" + k, v));
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.club2);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.club);
 }
 const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
 let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
@@ -525,12 +527,20 @@ function pairChanges(ch){
   ins.forEach((i,k) => { if (!usedI.has(k)) pairs.push({inP:i.p, inQ:i.q, outP:null}); });
   return pairs;
 }
+// Petit terrain avec un point sur le poste concerné.
+function miniPitch(q){
+  const p = (PRESETS[S.preset] || []).find(([id]) => id === q);
+  if (!p) return "";
+  return `<svg class="mini" viewBox="0 0 62 88" role="img" aria-label="Poste : ${esc(posName(q))}"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g><circle cx="${(1 + p[3]*0.6).toFixed(1)}" cy="${(1 + p[4]*0.86).toFixed(1)}" r="6"/></svg>`;
+}
 function changeLines(ch){
   let html = pairChanges(ch).map(pr => `<div class="swap">
-      <div class="side in"><span class="arrow">▲ Entre</span><span class="big">${esc(pr.inP || "—")}</span></div>
-      <div class="swapmid">remplace</div>
-      <div class="side out"><span class="arrow">▼ Sort</span><span class="big">${esc(pr.outP || "—")}</span></div>
-      ${pr.inP ? `<div class="where">${esc(pr.inP)} va au poste ${pill(pr.inQ)} <b>${esc(posMeta(pr.inQ).label)}</b>${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(posName(pr.outQ).toLowerCase())})</span>` : ""}</div>` : ""}
+      <div class="s-names">
+        <div class="s-row s-in"><span class="mk in" aria-hidden="true">↑</span><span class="big"><span class="sr">Entre : </span>${esc(pr.inP || "—")}</span></div>
+        <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}</span></div>
+      </div>
+      ${miniPitch(pr.inQ || pr.outQ)}
+      ${pr.inP ? `<div class="where">${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(posName(pr.outQ).toLowerCase())})</span>` : ""}</div>` : ""}
     </div>`).join("");
   if (ch.moves.length) html += `<div class="reorg"><div class="reorg-t">Réorganisation sur le terrain</div>${ch.moves.map(([p,a,b]) => `<div class="reorg-l"><b>${esc(p)}</b> passe de ${pill(a)} à ${pill(b)} <span class="note">${esc(posMeta(b).label)}</span></div>`).join("")}</div>`;
   return html;
@@ -544,7 +554,7 @@ function matchView(){
   const qEndT = C.q*ql;
   let alertHtml;
   const matchOver = atEnd && C.q >= S.rules.quarters;
-  if (!next) alertHtml = `<div class="alert"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
+  if (!next) alertHtml = `<div class="alert calm"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
   else {
     const isBreakChange = Math.abs(next.t - qEndT) < 1e-6 && C.q < S.rules.quarters;
     const secs = (next.t - t) * 60;
@@ -554,9 +564,9 @@ function matchView(){
     else if (secs <= 0.5) { cls = "now"; title = "Changement maintenant"; count = "GO"; }
     else if (secs <= S.rules.alertSec) { cls = "soon"; title = "Préparez-vous"; }
     if (isBreakChange && !atEnd && secs > S.rules.alertSec) count = "À la pause";
-    alertHtml = `<div class="alert ${cls}" id="alertCard"><div class="alert-head"><div><div class="alert-title">${title}</div><div style="font-weight:600">${esc(when)}</div></div><div class="count" id="count">${esc(count)}</div></div>
+    alertHtml = `<div class="alert ${cls}" id="alertCard"><div class="alert-head"><div><div class="alert-title">${title}</div><div class="alert-when">${esc(when)}</div></div><div class="count" id="count">${esc(count)}</div></div>
       <div class="moves">${changeLines(next)}</div>
-      ${cls==="now" ? `<button class="btn big" id="doneBtn" style="background:#fff;color:#0b5a32">Changement fait ✓</button>` : ""}</div>`;
+      ${cls==="now" ? `<button class="btn big" id="doneBtn" style="background:#fff;color:#0b5a32">C'est fait ✓</button>` : ""}</div>`;
   }
   const seg = segAt(plan, Math.min(t, plan.segs[plan.segs.length-1].b - 0.01));
   const upcomingIds = next ? new Set(next.outs.map(o=>o[0]).concat(next.moves.map(m=>m[0]))) : new Set();
@@ -587,13 +597,19 @@ function matchView(){
       ${banners}
       ${incidentPanel(seg)}
       <div class="card clock">
-        <div class="clock-top"><span class="qbadge">Q${C.q}</span><span class="remain" id="remain">Reste ${fmtClock(ql*60-el)}</span></div>
-        <div class="time${C.running?"":" paused"}" id="time">${fmtClock(el)}</div>
+        <div class="score-head">
+        <div class="clock-top"><span class="sh-title">${esc(matchTitle() || "Match")}</span><span class="qbadge">Q${C.q}</span></div>
+        <div class="sh-row"><div class="time${C.running?"":" paused"}" id="time">${fmtClock(el)}</div>${S.sheet && (sheet().us.length || sheet().them.length) ? `<span class="sh-score" aria-label="Score">${sheet().us.length}–${sheet().them.length}</span>` : ""}</div>
+        <span class="remain" id="remain">Reste ${fmtClock(ql*60-el)}</span>
         <div class="prog"><i id="progBar" style="width:${(el/(ql*60)*100).toFixed(2)}%"></i>${visChanges(plan).filter(c=>fmtQ(c.t).q===C.q && Math.abs(c.t-(C.q-1)*ql)>1e-6).map(c=>`<b style="left:${((c.t-(C.q-1)*ql)/ql*100).toFixed(2)}%"></b>`).join("")}</div>
+        </div>
         <div class="row">
           ${startBtn}
           <button class="btn" id="m10">−10 s</button><button class="btn" id="p10">+10 s</button>
         </div>
+      </div>
+      ${alertHtml}
+      <div class="card clock">
         <div class="row">
           <button class="btn warnb" id="incOpen">⚠ Imprévu</button>
           <button class="btn small" id="swapOpen">↔ Changement</button>
@@ -609,7 +625,6 @@ function matchView(){
           <button class="btn" id="reset">Match à 0</button>
         </div>
       </div>
-      ${alertHtml}
       ${ADJ ? "" : sheetCard(seg)}
     </div>
     <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
@@ -735,17 +750,17 @@ function bindOnboard(){
 
 /* ---------- accueil ---------- */
 function homeView(){
-  const ready = !!S.plan, title = matchTitle();
-  return `<div class="card"><h2>Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !</h2>
-    <p style="margin:0">Cette app prépare tes changements pour que chaque joueur ait son temps de jeu, puis te prévient pendant le match : qui entre, qui sort et à quel poste.</p>
-  </div>
-  <div class="card"><h2>Prochain match</h2>
-    ${!S.squad.length ? `<p class="muted" style="margin:0 0 12px">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</p><button class="btn primary" id="hCoach">Créer mon équipe</button>`
-      : `<p style="margin:0 0 12px">${title ? `<b>${esc(title)}</b><br>` : ""}<span class="muted">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></p>
-      ${ready ? `<button class="btn go big" id="hMatch">Ouvrir le match ▸</button>` : `<button class="btn primary" id="hCoach">Préparer le match</button>`}`}
-  </div>
-  ${accountNudge()}
-  <div class="card"><h2>Comment ça marche</h2>
+  const ready = !!S.plan, title = matchTitle(), hi = `Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !`;
+  if (!S.squad.length) return `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
+  <button class="btn dark big" id="hCoach">Créer mon équipe →</button>
+  ${accountNudge()}${howTo()}`;
+  return `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
+  <div class="tiles"><div class="tile"><b>${present().length}</b><span>présents</span></div><div class="tile"><b>${ready ? visChanges(S.plan).length : "–"}</b><span>changements</span></div><div class="tile"><b>${esc(S.preset)}</b><span>système</span></div></div>
+  ${ready ? `<button class="btn dark big" id="hMatch">Ouvrir le match →</button>` : `<button class="btn primary big" id="hCoach">Préparer le match →</button>`}
+  ${accountNudge()}${howTo()}`;
+}
+function howTo(){
+  return `<div class="card"><h2>Comment ça marche</h2>
     <ol class="steps">
       <li><b>Coach</b> : crée ton équipe et tes joueurs, avec leurs postes.</li>
       <li><b>Coach</b>, avant le match : coche les présents, choisis la compo de départ et génère le plan de rotation.</li>
