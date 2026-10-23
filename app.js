@@ -487,7 +487,7 @@ async function makePdf(){
         const lab = Math.abs(c.t-(q-1)*ql) < 1e-6 ? "Pause" : fmtQ(c.t).label;
         line(lab, 11, true, 16);
         pairChanges(c).forEach(pr => line(`${pr.inP || "-"} remplace ${pr.outP || "-"}${pr.inQ ? "  (" + posName(pr.inQ) + ")" : ""}`, 10, false, 30));
-        c.moves.forEach(([p,a,b]) => line(`Réorganisation : ${p} passe de ${posName(a)} à ${posName(b)}`, 9, false, 30));
+        moveGroups(c).forEach(g => line(`Changement de poste : ${moveText(g)}`, 9, false, 30));
       });
     }
     doc.save(`plan-b-${slug(S.teamName || "equipe")}.pdf`);
@@ -602,6 +602,36 @@ function pairChanges(ch){
   ins.forEach((i,k) => { if (!usedI.has(k)) pairs.push({inP:i.p, inQ:i.q, outP:null}); });
   return pairs;
 }
+// Changements de poste sur le terrain : deux joueurs qui inversent leur poste ne font qu'une ligne ;
+// les glissements sont rangés dans l'ordre de la chaîne, en partant du poste laissé par celui qui sort.
+function moveGroups(ch){
+  const used = new Set(), out = [];
+  ch.moves.forEach(([p,a,b], i) => {
+    if (used.has(i)) return;
+    const j = ch.moves.findIndex(([, a2, b2], k) => k !== i && !used.has(k) && a2 === b && b2 === a);
+    if (j >= 0) { used.add(i); used.add(j); out.push({swap:true, p, a, b, p2: ch.moves[j][0]}); }
+  });
+  const chainFrom = q => { let m; while ((m = ch.moves.findIndex(([, , b], k) => !used.has(k) && b === q)) >= 0) { used.add(m); const [p, a, b] = ch.moves[m]; out.push({p, a, b}); q = a; } };
+  ch.outs.forEach(([, q]) => chainFrom(q));
+  ch.moves.forEach(([p, a, b], k) => { if (!used.has(k)) { used.add(k); out.push({p, a, b}); chainFrom(a); } });
+  return out;
+}
+const lc = id => posName(id).toLowerCase();
+function moveText(g){
+  return g.swap ? `${g.p} et ${g.p2} échangent leur poste (${lc(g.a)} et ${lc(g.b)})` : `${g.p} : ${lc(g.a)} → ${lc(g.b)}`;
+}
+// Petit terrain avec des flèches : d'où part et où va chaque joueur qui change de poste.
+function movePitch(groups){
+  const xy = q => { const p = (PRESETS[S.preset] || []).find(([id]) => id === q); return p ? [1 + p[3]*0.6, 1 + p[4]*0.86] : null; };
+  const arrows = groups.map(g => {
+    const A = xy(g.a), B = xy(g.b); if (!A || !B) return "";
+    const dx = B[0]-A[0], dy = B[1]-A[1], L = Math.hypot(dx, dy) || 1, ux = dx/L, uy = dy/L, r = 6;
+    const a = [A[0]+ux*r, A[1]+uy*r], b = [B[0]-ux*r, B[1]-uy*r];
+    const head = (P, sx, sy) => `<path class="ah" d="M${(P[0]).toFixed(1)} ${(P[1]).toFixed(1)} L${(P[0]-sx*5-sy*3).toFixed(1)} ${(P[1]-sy*5+sx*3).toFixed(1)} L${(P[0]-sx*5+sy*3).toFixed(1)} ${(P[1]-sy*5-sx*3).toFixed(1)}Z"/>`;
+    return `<line class="ar" x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"/>${head(b, ux, uy)}${g.swap ? head(a, -ux, -uy) : ""}<circle cx="${A[0].toFixed(1)}" cy="${A[1].toFixed(1)}" r="4"/><circle cx="${B[0].toFixed(1)}" cy="${B[1].toFixed(1)}" r="4"/>`;
+  }).join("");
+  return `<svg class="mini mv" viewBox="0 0 62 88" aria-hidden="true"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g>${arrows}</svg>`;
+}
 // Petit terrain avec un point sur le poste concerné.
 function miniPitch(q){
   const p = (PRESETS[S.preset] || []).find(([id]) => id === q);
@@ -615,9 +645,12 @@ function changeLines(ch){
         <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}</span></div>
       </div>
       ${miniPitch(pr.inQ || pr.outQ)}
-      ${pr.inP ? `<div class="where">${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(posName(pr.outQ).toLowerCase())})</span>` : ""}</div>` : ""}
+      ${pr.inP ? `<div class="where">${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">${esc(pr.outP)} jouait ${esc(lc(pr.outQ))}${(m => m ? `, ${esc(m)} glisse à sa place` : "")(ch.moves.find(([, , b]) => b === pr.outQ)?.[0])}</span>` : ""}</div>` : ""}
     </div>`).join("");
-  if (ch.moves.length) html += `<div class="reorg"><div class="reorg-t">Réorganisation sur le terrain</div>${ch.moves.map(([p,a,b]) => `<div class="reorg-l"><b>${esc(p)}</b> passe de ${pill(a)} à ${pill(b)} <span class="note">${esc(posMeta(b).label)}</span></div>`).join("")}</div>`;
+  const mg = moveGroups(ch);
+  if (mg.length) html += `<div class="reorg"><div class="reorg-x"><div class="reorg-t">Changements de poste</div>${mg.map(g => g.swap
+      ? `<div class="reorg-l"><div class="rl-h">⇄ <b>${esc(g.p)}</b> et <b>${esc(g.p2)}</b> échangent</div><div class="rl-d"><b>${esc(g.p)}</b> ${pill(g.a)} → ${pill(g.b)}</div><div class="rl-d"><b>${esc(g.p2)}</b> ${pill(g.b)} → ${pill(g.a)}</div></div>`
+      : `<div class="reorg-l"><div class="rl-h"><b>${esc(g.p)}</b></div><div class="rl-d">${pill(g.a)} → ${pill(g.b)} ${esc(posName(g.b))}</div></div>`).join("")}</div>${movePitch(mg)}</div>`;
   return html;
 }
 function matchView(){
@@ -647,18 +680,19 @@ function matchView(){
   }
   const seg = segAt(plan, Math.min(t, plan.segs[plan.segs.length-1].b - 0.01));
   const upcomingIds = next ? new Set(next.outs.map(o=>o[0]).concat(next.moves.map(m=>m[0]))) : new Set();
+  const goesTo = next ? Object.fromEntries(next.moves.map(([p,, b]) => [p, b])) : {};
   const onIds = Object.entries(seg.on);
   const pitch = `<div class="pitch" aria-label="Joueurs sur le terrain">${pitchLines()}${PRESETS[S.preset].map(([id,label,line,x,y]) => {
       const who = onIds.find(([p,q]) => q === id)?.[0] || "Vide";
       const rl = (S.squad.find(p => p.name === who)?.roles || []).join("");
-      return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}</span></div>`;}).join("")}</div>`;
+      return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}${goesTo[who] ? ` → ${esc(posShort(goesTo[who]))}` : ""}</span></div>`;}).join("")}</div>`;
   const hurt = outForGood();
   const benchNames = present().map(p=>p.name).filter(n => !(n in seg.on)).map(n => hurt.includes(n) ? n + " 🩹" : n);
   const qChanges = visChanges(plan).filter(c => fmtQ(c.t).q === C.q || (Math.abs(c.t - (C.q-1)*ql) < 1e-6 && C.q>1) || (Math.abs(c.t - C.q*ql)<1e-6));
   const upList = qChanges.map(c => {
     const isBrk = Math.abs(c.t/ql - Math.round(c.t/ql)) < 1e-6;
     const lab = isBrk ? "Pause" : fmtQ(c.t).label;
-    return `<div class="up-item${(C.done.includes(c.t) || c.t < t - 0.4) ? " done":""}"><div class="up-t">${lab}</div><div class="up-l">${pairChanges(c).map(pr=>`<div><span class="i">${esc(pr.inP||"—")}</span> remplace <span class="o">${esc(pr.outP||"—")}</span> ${pr.inQ?pill(pr.inQ):""}</div>`).join("")}${c.moves.map(([p,a,b])=>`<div class="m">↔ ${esc(p)} passe en ${esc(posName(b).toLowerCase())}</div>`).join("")}</div></div>`;}).join("") || `<p class="muted">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
+    return `<div class="up-item${(C.done.includes(c.t) || c.t < t - 0.4) ? " done":""}"><div class="up-t">${lab}</div><div class="up-l">${pairChanges(c).map(pr=>`<div><span class="i">${esc(pr.inP||"—")}</span> remplace <span class="o">${esc(pr.outP||"—")}</span> ${pr.inQ?pill(pr.inQ):""}</div>`).join("")}${moveGroups(c).map(g=>`<div class="m">${g.swap ? "⇄" : "→"} ${esc(moveText(g))}</div>`).join("")}</div></div>`;}).join("") || `<p class="muted">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
   const banners = activeBanners(t);
   const startBtn = C.running ? `<button class="btn big" id="pause">❚❚ Pause</button>` : (atEnd ? (C.q < S.rules.quarters ? `<button class="btn big primary" id="nextQ">Lancer ${pThe(C.q+1)} ▸</button>` : `<span class="alert-title">Fin du match</span>`) : `<button class="btn big go" id="start">▶ ${el>0?"Reprendre":"Démarrer "+pThe(C.q)}</button>`);
   if (far) return `<div class="far">
