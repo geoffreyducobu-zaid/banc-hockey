@@ -86,6 +86,7 @@ const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toL
 // Logo StickMate : l'icône (flèches du changement autour de la balle) et le nom avec le i en crosse.
 const LOGO_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M21.8 39.7A30 30 0 0 1 76 35M77.6 23.7 76 35 65.4 30.7" fill="none" stroke="#4ee08f" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M78.2 60.3A30 30 0 0 1 24 65M34.6 69.3 24 65 22.4 76.3" fill="none" stroke="#ff7a6e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="50" r="11" fill="#f6b81c"/></svg>`;
 const WORDMARK = `<span class="wm">St<svg class="wm-i" viewBox="0 0 30 100" aria-hidden="true"><path d="M16 30 15 78Q14 95 1 92" fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="9" r="9.5" fill="#f6b81c"/></svg>ck<span class="wm-mate">Mate</span></span>`;
+const COPYRIGHT = "© 2026 Geoffrey Ducobu. StickMate, tous droits réservés.";
 const logoLockup = () => `<div class="lockup" role="img" aria-label="StickMate"><span class="logo">${LOGO_SVG}</span>${WORDMARK}</div>`;
 function paintSub(){ const bn = $("#brandName"); if (bn) { const t = S.teamName || S.profile?.club; if (t) bn.textContent = t; else bn.innerHTML = WORDMARK; } document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
  const el = $("#sub"); if (!el) return;
@@ -905,7 +906,8 @@ function settingsView(){
       <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
       ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}`)}
   </div>`}
-  <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>`;
+  <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>
+  <p class="muted" style="font-size:.8rem;margin:0 4px">${COPYRIGHT}</p>`;
 }
 function bindSettings(){
   const v = $("#view");

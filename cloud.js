@@ -230,13 +230,13 @@ function accountScreen(){
         ${field("auPw", "Mot de passe (8 caractères min.)", "password", "new-password")}${field("auPw2", "Retape le mot de passe", "password", "new-password")}</div>
       ${msgs()}<button class="btn go big" id="auSignup"${busy}>${authBusy ? "Un instant…" : "Créer mon compte"}</button>
       <p class="muted" style="margin:0;font-size:.85rem">Tes données servent seulement à faire marcher l'app. Elles sont stockées en Europe et ne sont jamais revendues ni montrées aux joueurs.</p>
-      ${later}</div>`;
+      ${later}<p class="muted" style="margin:0;font-size:.8rem">${COPYRIGHT}</p></div>`;
   return `<div class="card onb">${intro}${tabs}
       <div class="form">${field("auEmail", "Email", "email", "email", authEmail)}${field("auPw", "Mot de passe", "password", "current-password")}</div>
       ${msgs()}<button class="btn go big" id="auLogin"${busy}>${authBusy ? "Un instant…" : "Me connecter"}</button>
       <button class="btn" data-auth="forgot" style="align-self:flex-start">Mot de passe oublié ?</button>
       ${authMsg && /pas encore confirmé/.test(authMsg) ? `<button class="btn" id="auResend" style="align-self:flex-start"${busy}>Renvoyer l'email de confirmation</button>` : ""}
-      ${later}</div>`;
+      ${later}<p class="muted" style="margin:0;font-size:.8rem">${COPYRIGHT}</p></div>`;
 }
 function bindAccount(){
   const v = $("#view"), enter = (id, fn) => v.querySelectorAll("input").forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter" && $("#" + id)) fn(); }));
