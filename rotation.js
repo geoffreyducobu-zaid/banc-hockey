@@ -66,12 +66,12 @@
       if (q > 0 && rq(R, q, 'breakChanges')) T.add(+qa.toFixed(3));
       for (let m = Math.ceil(rq(R, q, 'startBlock')); m <= R.qlen - rq(R, q, 'endBlock') + EPS; m += 1) T.add(+(qa + m).toFixed(3));
     }
-    const F = R.from || 0; return [...T].filter(t => t > F + EPS && t < R.quarters * R.qlen).sort((a, b) => a - b);
+    const F = R.from || 0, U = R.until || R.quarters * R.qlen; return [...T].filter(t => t > F + EPS && t < U - EPS).sort((a, b) => a - b);
   }
 
   function runOnce(I, rand, knobs) {
     const { players, posIds, lineup, R, targets, locked, can, pref, gkPos } = I;
-    const END = R.quarters * R.qlen;
+    const END = R.until || R.quarters * R.qlen;
     const T = I.times;
     const on = new Map(); // player -> pos
     for (const q of posIds) on.set(lineup[q], q);
@@ -157,7 +157,7 @@
   }
 
   function evaluate(I, res) {
-    const { players, R, targets } = I; const END = R.quarters * R.qlen;
+    const { players, R, targets } = I; const END = R.until || R.quarters * R.qlen;
     let dev = 0, v = res.viol, sw = 0, pc = 0;
     for (const p of players) dev += Math.abs(res.played[p] - targets[p]) + Math.max(0, Math.abs(res.played[p] - targets[p]) - 2) * 4;
     // stints & bench check
@@ -196,7 +196,7 @@
   // ---------- simulated annealing on on-sets per grid segment ----------
   function anneal(I, init, rand, iters) {
     const { players, posIds, R, targets, locked, can } = I;
-    const END = R.quarters * R.qlen;
+    const END = R.until || R.quarters * R.qlen; // until : fenêtre qui s'arrête avant la fin du match (carton)
     const F0 = R.from || 0; const grid = [F0, ...I.times, END];
     const nS = grid.length - 1; const dur = []; for (let s = 0; s < nS; s++) dur.push(grid[s + 1] - grid[s]);
     const isBreak = grid.map(t => t > 0 && Math.abs(t / R.qlen - Math.round(t / R.qlen)) < EPS);
@@ -230,7 +230,7 @@
           }
           if (!v && pv) { // leave at grid[s]
             const L = grid[s] - runStart;
-            if (L < I.minS[p] - EPS) pen += 300 + (I.minS[p] - L) * 30;
+            if (L < I.minS[p] - EPS && !(R.until && s === nS)) pen += 300 + (I.minS[p] - L) * 30;
             if (I.minFirst[p] && Math.abs(runStart - F0) < EPS && F0 === 0 && L < I.minFirst[p] - EPS) pen += 300 + (I.minFirst[p] - L) * 30;
             if (!locked.has(p) && L > I.maxS[p] + EPS) pen += 300 + (L - I.maxS[p]) * 30;
             if (s < nS && gkOnly[i] && gkLock[s]) pen += 40;
@@ -243,14 +243,16 @@
         }
         const d = Math.abs(played - targets[p]);
         pen += d * 8 + Math.max(0, d - 1.5) * 20;
-        if (!F0 && I.fieldPlayer[p] && targets[p] >= R.minPlay && played < R.minPlay - EPS) pen += 30 + (R.minPlay - played) * 20;
+        // temps de jeu minimum sur tout le match (après un imprévu : minutes déjà jouées + minutes à venir)
+        const pr = I.prior ? I.prior[p] || 0 : 0;
+        if (!R.until && I.fieldPlayer[p] && targets[p] + pr >= R.minPlay && played + pr < R.minPlay - EPS) pen += F0 ? 100 + (R.minPlay - played - pr) * 40 : 30 + (R.minPlay - played) * 20;
       }
       for (let s = 1; s < nS; s++) if (entries[s]) { windows++; const me = rq(R, qOf(s), 'maxEntries'); if (entries[s] > me) pen += 300 * (entries[s] - me); }
       return pen + windows * 3 + stints * 3 + sumSeg();
     }
     function benchPen(a, b) {
       let pen = 0;
-      if (b - a < R.minBench - EPS && a > F0 + EPS && b < END) pen += 150;
+      if (b - a < R.minBench - EPS && a > EPS && b < END) pen += F0 ? 300 + (R.minBench - (b - a)) * 30 : 150; // aussi pour un joueur sorti juste avant un imprévu
       for (let q = 0; q < R.quarters; q++) {
         const qa = q * R.qlen, mb = rq(R, q, 'maxBench'); const ov = Math.min(b, qa + R.qlen) - Math.max(a, qa);
         if (ov > mb + EPS) pen += 300 + (ov - mb) * 30;
@@ -271,13 +273,13 @@
     let cur = score(), best = cur; let bestOn = on.map(r => r.slice());
     const free = players.map((p, i) => i).filter(i => !locked.has(players[i]));
     const T0 = 40, T1 = 0.3;
-    let lastEntry = 1; for (let s = 1; s < nS; s++) if (grid[s] <= END - R.minStint + EPS) lastEntry = s;
+    let lastEntry = 1; for (let s = 1; s < nS; s++) if (R.until || grid[s] <= END - R.minStint + EPS) lastEntry = s;
     for (let k = 0; k < iters; k++) {
       const temp = T0 * Math.pow(T1 / T0, k / iters);
       const s0 = 1 + Math.floor(rand() * (lastEntry));
       const len = rand() < 0.5 ? 1 : 1 + Math.floor(rand() * 6);
       let s1 = Math.min(nS - 1, s0 + len - 1);
-      if (s1 + 1 < nS && grid[s1 + 1] > END - R.minStint + EPS) s1 = nS - 1;
+      if (!R.until && s1 + 1 < nS && grid[s1 + 1] > END - R.minStint + EPS) s1 = nS - 1;
       // choose x on in all segs, y off in all segs
       const xs = free.filter(i => { for (let s = s0; s <= s1; s++) if (!on[s][i]) return false; return true; });
       const ys = free.filter(i => { for (let s = s0; s <= s1; s++) if (on[s][i]) return false; return true; });
@@ -347,7 +349,7 @@
     const minS = {}; P.forEach(p => minS[p.name] = Math.max(R.minStint, p.minStint || 0));
     const rolesAvail = [...new Set(P.flatMap(p => (p.roles || [])))];
     const maxS = {}; P.forEach(p => maxS[p.name] = p.oneBlock ? END : Math.max(R.minStint, p.minStint || 0, p.maxStint || R.maxStint));
-    const I = { players, posIds, lineup, R, targets, locked, can, pref, gkPos, fieldPlayer, maxS, oneBlock, roles, rolesAvail, minFirst, minS, since: input.since || null, times: changeTimes(R) };
+    const I = { players, posIds, lineup, R, targets, locked, can, pref, gkPos, fieldPlayer, maxS, oneBlock, roles, rolesAvail, minFirst, minS, since: input.since || null, prior: input.prior || null, times: changeTimes(R) };
     const rand = rng(seed || 12345);
     let best = null, bestScore = Infinity;
     const iters = input.iters || 300;
@@ -374,21 +376,8 @@
       if (ins.length || moves.length) changes.push({ t: segs[i].a, ins, outs, moves });
     }
     const iv = intervals(best.segs, players);
-    const check = [];
-    for (const p of players) for (const [a, b] of iv[p]) {
-      if (b - a < I.minS[p] - EPS && b < END - EPS) check.push(`${p} : passage de moins de ${I.minS[p]}'`);
-      if (!locked.has(p) && b - a > I.maxS[p] + EPS) check.push(`${p} : passage de plus de ${I.maxS[p]}'`);
-    }
-    for (const p of players) {
-      if (!fieldPlayer[p] || locked.has(p)) continue;
-      let t = R.from || 0; const off = [];
-      for (const [a, b] of iv[p]) { if (a > t) off.push([t, a]); t = b; }
-      if (t < END) off.push([t, END]);
-      for (const [a, b] of off) for (let q = 0; q < R.quarters; q++) {
-        const qa = q * R.qlen, mb = rq(R, q, 'maxBench'); if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > mb + EPS) check.push(`${p} : plus de ${mb}' sur le banc ${R.quarters === 2 ? 'en MT' : 'au Q'}${q + 1}`);
-      }
-    }
-    for (const [t, n] of Object.entries(best.entriesAt)) if (n > rq(R, Math.min(R.quarters - 1, Math.floor((+t + EPS) / R.qlen)), 'maxEntries')) check.push(`Trop d'entrées à ${t}'`);
+    // plan complet : toutes les règles du coach (un sous-plan d'imprévu est contrôlé par replan)
+    const check = R.from ? [] : checkRules(segs, P, R, { T: 0, T1: 0, hit: new Set(), gk: gkPos, targets, freezeOut: [] });
     check.push(...roleGaps(best.segs.map(s => ({ a: s.a, b: s.b, on: Object.fromEntries(s.on) })), roles, rolesAvail));
     for (const p of players) if (Math.abs(best.played[p] - targets[p]) > 2.5) check.push(`${p} : ${fmtMin(best.played[p])} au lieu de ${fmtMin(targets[p])}`);
     return { segs, changes, played: best.played, targets, intervals: iv, warnings: [...warnings, ...check], score: bestScore };
@@ -456,9 +445,29 @@
     const cur = { ...segAt(T).on };
     const outSet = new Set(o.out || []);
     let startOn = { ...cur };
-    if (T1 > T + EPS) { // frozen period with players temporarily off (cards)
-      const fr = { ...cur }; (o.freezeOut || []).forEach(p => delete fr[p]);
-      prefix.push({ a: T, b: T1, on: fr });
+    // minutes jouées et heure du dernier changement de chaque joueur, d'après des segments et ceux sur le terrain à t0
+    const stats = (segs, startMap, t0) => {
+      const played = {}, since = {};
+      o.players.forEach(p => { played[p.name] = 0; let last = 0, prevOn = null;
+        for (const s of segs) { if (p.name in s.on) played[p.name] += s.b - s.a; const on = p.name in s.on; if (prevOn !== null && on !== prevOn) last = s.a; prevOn = on; }
+        if (prevOn !== null && (p.name in startMap) !== prevOn) last = t0;
+        since[p.name] = last; });
+      return { played, since };
+    };
+    if (T1 > T + EPS) { // carton : on joue à un de moins de T à T1, avec des changements permis entre-temps
+      const fo = (o.freezeOut || []).filter(p => p in cur);
+      const fr = { ...cur }; fo.forEach(p => delete fr[p]);
+      let segsA = null;
+      try {
+        const vac0 = new Set(o.vacate || []), posA = o.positions.filter(p => !vac0.has(p.id) && !fo.some(n => cur[n] === p.id));
+        const st = stats(prefix, fr, T), playersA = o.players.filter(p => !outSet.has(p.name) && !fo.includes(p.name));
+        const share = (T1 - T) / Math.max(EPS, END - T), lineupA = {}; for (const [n, q] of Object.entries(fr)) lineupA[q] = n;
+        const subA = buildPlan({ positions: posA, players: playersA.map(p => ({ name: p.name, pos: p.pos, target: Math.max(0, p.target + ((o.adjust || {})[p.name] || 0) - st.played[p.name]) * share, locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint })),
+          lineup: lineupA, rules: { ...o.rules, from: T, until: T1 }, since: st.since, prior: st.played, seed: (o.seed || 7) + 13, iters: 80, saIters: Math.round((o.saIters || 35000) / 3), chains: 2 });
+        if (!subA.error && subA.segs.length) segsA = subA.segs;
+      } catch (e) { segsA = null; }
+      if (segsA) { prefix.push(...segsA.map(s => ({ a: s.a, b: s.b, on: { ...s.on } }))); startOn = { ...segsA[segsA.length - 1].on }; fo.forEach(p => startOn[p] = cur[p]); }
+      else prefix.push({ a: T, b: T1, on: fr });
     }
     outSet.forEach(p => delete startOn[p]);
     if (o.swap) { const q = startOn[o.swap.out]; delete startOn[o.swap.out]; startOn[o.swap.in] = o.swap.pos || q; }
@@ -502,23 +511,80 @@
     const C = onList.map(p => posIds.map(q => canP[p].has(q) ? (startOn[p] && startOn[p] !== q ? 10 : 0) + (avail.find(x => x.name === p).pos.indexOf(q)) : 1e9));
     const asg = hungarian(C); const lineup = {}; onList.forEach((p, i) => lineup[posIds[asg[i]]] = p);
     if (Object.keys(lineup).length < posIds.length) return { error: true, warnings: ["Impossible de compléter l'équipe avec les joueurs disponibles."] };
-    const sub = buildPlan({ positions, players: avail.map(p => ({ name: p.name, pos: p.pos, target: rem[p.name], locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint })), lineup, rules: { ...o.rules, from: T1 }, since, seed: o.seed || 7, iters: 150, saIters: o.saIters || 35000, chains: 3 });
-    if (sub.error) return sub;
-    const segs = prefix.concat(sub.segs);
-    const merged = []; for (const s of segs) { const L = merged[merged.length - 1]; if (L && Math.abs(L.b - s.a) < EPS && JSON.stringify(L.on) === JSON.stringify(s.on)) L.b = s.b; else merged.push({ a: s.a, b: s.b, on: { ...s.on } }); }
-    const res = finalize(merged, o.players, Object.fromEntries(o.players.map(p => [p.name, p.target + ((o.adjust || {})[p.name] || 0)])), [], plan.events || []);
     const hit = new Set([...(o.out || []), ...(o.freezeOut || [])]);
-    const maxOf = n => { const p = o.players.find(x => x.name === n); return p.oneBlock || p.locked ? END : Math.max(o.rules.minStint, p.maxStint || o.rules.maxStint); };
-    for (const n in res.intervals) for (const [a, b] of res.intervals[n]) {
-      if (b <= T1 + EPS && a < T - EPS) continue;
-      if (hit.has(n) && (Math.abs(b - T) < EPS)) continue;
-      const mn = Math.max(o.rules.minStint, (o.players.find(x => x.name === n) || {}).minStint || 0);
-      if (b - a < mn - EPS && b < END - EPS) res.warnings.push(`${n} : passage de moins de ${mn}'`);
-      if (b - a > maxOf(n) + EPS) res.warnings.push(`${n} : passage de plus de ${maxOf(n)}'`);
-    }
+    const gk = (o.positions.find(p => p.gk) || {}).id;
+    const totals = Object.fromEntries(o.players.map(p => [p.name, p.target + ((o.adjust || {})[p.name] || 0)]));
+    // temps visé réaliste pour le minimum de jeu : déjà joué + ce qu'il reste à jouer (moins si l'équipe joue à 10)
+    const eff = {}; avail.forEach(p => eff[p.name] = played[p.name] + (rem[p.name] || 0));
     const rl = {}; o.players.forEach(p => rl[p.name] = p.roles || []);
-    res.warnings.push(...roleGaps(merged.filter(s => s.b > T1 + EPS), rl, [...new Set(avail.flatMap(p => p.roles || []))]));
+    // Deux essais (graines différentes) : on garde celui qui respecte le plus de règles.
+    const attempt = seed => {
+      let subSegs = [];
+      if (T1 < END - EPS) { // un carton qui finit avec le match : plus rien à planifier
+        const sub = buildPlan({ positions, players: avail.map(p => ({ name: p.name, pos: p.pos, target: rem[p.name], locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint })), lineup, rules: { ...o.rules, from: T1 }, since, prior: played, seed, iters: 150, saIters: o.saIters || 35000, chains: 3 });
+        if (sub.error) return sub;
+        subSegs = sub.segs;
+      }
+      const segs = prefix.concat(subSegs);
+      const merged = []; for (const s of segs) { const L = merged[merged.length - 1]; if (L && Math.abs(L.b - s.a) < EPS && JSON.stringify(L.on) === JSON.stringify(s.on)) L.b = s.b; else merged.push({ a: s.a, b: s.b, on: { ...s.on } }); }
+      const res = finalize(merged, o.players, totals, [], plan.events || []);
+      res.warnings.push(...checkRules(merged, avail, o.rules, { T, T1, hit, gk, targets: eff, freezeOut: o.freezeOut || [] }));
+      res.warnings.push(...roleGaps(merged.filter(s => s.b > T1 + EPS), rl, [...new Set(avail.flatMap(p => p.roles || []))]));
+      return res;
+    };
+    let res = null;
+    for (let k = 0; k < (o.tries || 2); k++) {
+      const r = attempt((o.seed || 7) + k * 7919);
+      if (r.error) return r;
+      if (!res || r.warnings.length < res.warnings.length) res = r;
+      if (!res.warnings.length) break;
+    }
     return res;
+  }
+  // Contrôle d'un plan après un imprévu, sur la partie qui suit l'imprévu (T) : toutes les règles du coach.
+  // Ce qui se passe pile à T (le remplacement forcé) et à T1 (retour d'un joueur sanctionné) est permis d'office.
+  function checkRules(segs, players, R, c) {
+    const END = R.quarters * R.qlen, out = [], T1 = c.T1, pName = q => (R.quarters === 2 ? 'MT' : 'Q') + (q + 1);
+    const qOf = t => Math.min(R.quarters - 1, Math.floor((t + EPS) / R.qlen));
+    const forced = t => Math.abs(t - c.T) < EPS || Math.abs(t - T1) < EPS;
+    // moments de changement et entrées en même temps
+    for (let i = 1; i < segs.length; i++) {
+      const t = segs[i].a; if (t < T1 - EPS || forced(t)) continue;
+      const ins = Object.keys(segs[i].on).filter(p => !(p in segs[i - 1].on)).length;
+      if (!ins) continue;
+      const q = qOf(t), m = t - q * R.qlen, atBreak = Math.abs(m) < EPS;
+      const ok = atBreak ? q > 0 && rq(R, q, 'breakChanges') : m >= rq(R, q, 'startBlock') - EPS && m <= R.qlen - rq(R, q, 'endBlock') + EPS;
+      if (!ok) out.push(`Changement à ${fmtMin(m)} du ${pName(q)} : en dehors des moments permis`);
+      if (ins > rq(R, q, 'maxEntries')) out.push(`${ins} joueurs entrent en même temps à ${fmtMin(m)} du ${pName(q)} (maximum ${rq(R, q, 'maxEntries')})`);
+    }
+    for (const p of players) {
+      const field = p.pos.some(q => q !== c.gk), fixed = p.locked || p.oneBlock;
+      const iv = []; for (const s of segs) if (p.name in s.on) { const L = iv[iv.length - 1]; if (L && Math.abs(L[1] - s.a) < EPS) L[1] = s.b; else iv.push([s.a, s.b]); }
+      const minS = Math.max(R.minStint, p.minStint || 0), maxS = fixed ? END : Math.max(minS, p.maxStint || R.maxStint);
+      for (const [a, b] of iv) {
+        if (b < T1 + EPS) continue;
+        if (b - a < minS - EPS && b < END - EPS && !(c.hit.has(p.name) && Math.abs(b - c.T) < EPS)) out.push(`${p.name} : passage de moins de ${fmtMin(minS)}`);
+        if (b - a > maxS + EPS) out.push(`${p.name} : passage de plus de ${fmtMin(maxS)}`);
+      }
+      if (!field || fixed) continue;
+      // banc : morceaux hors du terrain (sans la période où il était exclu par un carton)
+      let t0 = 0; const off = [];
+      for (const [a, b] of iv) { if (a > t0 + EPS) off.push([t0, a]); t0 = b; }
+      if (t0 < END - EPS) off.push([t0, END]);
+      const carded = c.freezeOut.includes(p.name);
+      for (const [a, b] of off) {
+        if (b < T1 + EPS || (carded && a <= c.T + EPS && b >= T1 - EPS)) continue;
+        for (let q = 0; q < R.quarters; q++) {
+          const qa = q * R.qlen, mb = rq(R, q, 'maxBench');
+          if (qa + R.qlen <= T1 + EPS) continue;
+          if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > mb + EPS) out.push(`${p.name} : plus de ${fmtMin(mb)} sur le banc ${R.quarters === 2 ? 'en' : 'au'} ${pName(q)}`);
+        }
+        if (a > EPS && b < END - EPS && b - a < R.minBench - EPS && !forced(b)) out.push(`${p.name} : revient après ${fmtMin(b - a)} sur le banc (minimum ${fmtMin(R.minBench)})`);
+      }
+      const played = iv.reduce((s, [a, b]) => s + b - a, 0), tg = c.targets[p.name] || 0;
+      if (tg >= R.minPlay && played < R.minPlay - 0.5) out.push(`${p.name} : jouera moins que le temps de jeu minimum`); // sans chiffres : cet écran peut être vu hors de la page Coach
+    }
+    return [...new Set(out)];
   }
   function finalize(segs, players, targets, warnings, events) {
     const changes = [];
@@ -536,6 +602,6 @@
     return { segs, changes, played, targets, intervals: iv, warnings: warnings || [], events, score: 0 };
   }
 
-  root.Rotation = { rq, migrateRules, buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
+  root.Rotation = { rq, migrateRules, checkRules, buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
   if (typeof module !== 'undefined') module.exports = root.Rotation;
 })(typeof window !== 'undefined' ? window : globalThis);
