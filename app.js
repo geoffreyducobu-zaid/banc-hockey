@@ -6,7 +6,7 @@ const PRESETS = {
   "4-4-2": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu gauche","mid",14,48,"MG"],["6","Milieu axial gauche","dm",38,54,"MAG"],["7","Milieu axial droit","dm",62,54,"MAD"],["8","Milieu droit","mid",86,48,"MD"],["9","Avant gauche","att",36,20,"AG"],["10","Avant droit","att",64,20,"AD"]],
   "3-3-3-1": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",22,62,"MDG"],["5","Milieu déf. axe","dm",50,64,"MDA"],["6","Milieu déf. droit","dm",78,62,"MDD"],["7","Milieu off. gauche","mid",22,40,"MOG"],["8","Milieu off. axe","mid",50,42,"MOA"],["9","Milieu off. droit","mid",78,40,"MOD"],["10","Avant centre","att",50,17,"AC"]]
 };
-const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:6,per:{0:{startBlock:6}},startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6,maxDef:22,maxMid:22,maxAtt:22};
+const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:4,per:{},startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6,maxDef:22,maxMid:22,maxAtt:22};
 // Règles copiées à neuf (per est un objet : jamais partagé avec DEFAULT_RULES).
 const defaultRules = () => JSON.parse(JSON.stringify(DEFAULT_RULES));
 // Quarts ou mi-temps : noms des périodes (q commence à 1).
@@ -71,7 +71,7 @@ const fmtClock = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.flo
 const fmtQ = t => { const ql = S.rules.qlen; const q = Math.min(S.rules.quarters, Math.floor(t/ql + 1e-6) + 1); const m = t - (q-1)*ql; return {q, m, label: R.fmtMin(m)}; };
 
 /* ---------- storage ---------- */
-function applyData(v){ v = JSON.parse(JSON.stringify(v)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules:{...defaultRules(), ...R.migrateRules(v.rules)}}; }
+function applyData(v){ v = JSON.parse(JSON.stringify(v)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules: v.rules ? {...defaultRules(), ...R.migrateRules(v.rules)} : defaultRules()}; }
 function loadLocal(){ let v = null; try { v = JSON.parse(localStorage.getItem("banc-state") || "null"); } catch(e){} applyData(v || SEED); }
 // L'adjoint ne touche jamais aux données du téléphone : il ne fait qu'afficher le match du coach.
 function saveLocal(){ if (ADJ) return; try { localStorage.setItem("banc-state", JSON.stringify(S)); } catch(e){} }
@@ -182,7 +182,7 @@ function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; 
 const MATCH_KEYS = ["matchLabel","matchDate","preset","timeMode","lineup","plan","prevPlan","basePlan","sheet"];
 const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
-let matchesOpen = false, newMatchForm = false;
+let matchesOpen = false, newMatchForm = false, delPin = null;
 let toolsOpen = false, matchTab = "chg";
 function curMatchRec(){
   const r = {id:S.curMatch}; MATCH_KEYS.forEach(k => r[k] = S[k] ?? null);
@@ -296,6 +296,9 @@ function matchesView(){
       <button class="mopen" data-mopen="${esc(r.id)}"><b>${esc(r.matchLabel || "Match sans nom")}</b><span class="muted">${esc(fmtDate(r.matchDate))} · ${esc(matchStatus(r))}</span></button>
       ${r.id === S.curMatch ? `<span class="live">Ouvert</span>` : ""}
       <button class="x" data-mdel="${esc(r.id)}" aria-label="Supprimer ce match">✕</button></div>`).join("");
+  // Supprimer un match efface son plan et son score : on demande le code de verrouillage.
+  const delName = delPin && (sortedMatches().find(r => r.id === delPin)?.matchLabel || "Match sans nom");
+  if (delPin && S.pin && !coachOK) return pinView("Supprimer un match", `Entre ton code de verrouillage pour supprimer « ${delName} ».`) + `<button class="btn" id="delPinNo">Annuler</button>`;
   return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes matchs</h2><button class="btn small" id="mClose">Fermer</button></div>
     <div class="mlist2" style="margin-top:12px">${rows}</div>
     ${newMatchForm ? `<div class="form" style="margin-top:14px">
@@ -311,13 +314,15 @@ let nmHome = true;
 function segBtnsLocal(){ return `<div class="seg" role="group"><button data-nmhome="1" aria-pressed="${nmHome}">Domicile</button><button data-nmhome="0" aria-pressed="${!nmHome}">Extérieur</button></div>`; }
 function bindMatches(){
   $("#mList")?.addEventListener("click", () => { matchesOpen = true; toolsOpen = false; render(); window.scrollTo(0, 0); });
-  $("#mClose")?.addEventListener("click", () => { matchesOpen = false; newMatchForm = false; render(); });
+  $("#mClose")?.addEventListener("click", () => { matchesOpen = false; newMatchForm = false; delPin = null; render(); });
   $("#nmOpen")?.addEventListener("click", () => { newMatchForm = true; render(); $("#nmOpp")?.focus(); });
   $("#nmCancel")?.addEventListener("click", () => { newMatchForm = false; render(); });
   document.querySelectorAll("[data-nmhome]").forEach(b => b.addEventListener("click", () => { const o = $("#nmOpp").value, d = $("#nmDate").value; nmHome = b.dataset.nmhome === "1"; render(); $("#nmOpp").value = o; $("#nmDate").value = d; }));
   $("#nmGo")?.addEventListener("click", () => { createMatch($("#nmOpp").value.trim(), $("#nmDate").value, nmHome); newMatchForm = false; matchesOpen = false; render(); });
   document.querySelectorAll("[data-mopen]").forEach(b => b.addEventListener("click", () => { if (b.dataset.mopen !== S.curMatch) openMatch(b.dataset.mopen); matchesOpen = false; render(); }));
-  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
+  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (S.pin && !coachOK) { delPin = this.dataset.mdel; render(); return; } if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
+  if ($("#pinGo") && delPin) { bindPin(() => { const id = delPin; delPin = null; removeMatch(id); }); $("#pinIn").focus(); }
+  $("#delPinNo")?.addEventListener("click", () => { delPin = null; render(); });
 }
 // Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
 // Un match déjà fini et enregistré repart aussi de zéro : il sort de la saison et sera réenregistré à la fin.
@@ -338,8 +343,8 @@ function playedUntil(plan, n, t){ return plan.segs.reduce((a, s) => a + (n in s.
 function injuryBench(seg, p, T){
   const q = seg.on[p], tg = S.plan.targets || {};
   return present().filter(x => !(x.name in seg.on) && !outForGood().includes(x.name))
-    .map(x => ({name:x.name, knows: x.pos.includes(q) || extraPos(x.name).includes(q), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
-    .sort((a,b) => (b.knows - a.knows) || (ADJ ? a.name.localeCompare(b.name) : b.left - a.left));
+    .map(x => ({name:x.name, knows: x.pos.includes(q) || extraPos(x.name).includes(q), line: x.pos.some(z => lineGroup(posMeta(z).line) === lineGroup(posMeta(q).line)), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
+    .sort((a,b) => (b.knows - a.knows) || (b.line - a.line) || (ADJ ? a.name.localeCompare(b.name) : b.left - a.left));
 }
 // Postes ajoutés en cours de match (joueur mis hors de son poste pour remplacer un blessé).
 function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).map(e => e.extraPos); }
@@ -385,7 +390,12 @@ function doIncident(){
   }
   if (type === "rouge") { o.out.push(p); o.vacate.push(seg.on[p]); }
   if (timedCard(type)) { o.freezeUntil = Math.min(S.rules.quarters*S.rules.qlen, T + info.d); o.freezeOut = [p]; if (!inc.catchUp) o.adjust[p] = -info.d; }
-  const res = res0 || R.replan(S.plan, o);
+  let res = res0 || R.replan(S.plan, o);
+  // Hors plan : si personne ne peut être réorganisé, le joueur qui entre joue au poste du sortant jusqu'à la fin.
+  if (res.error && type === "libre" && seg.on[p]) {
+    const q = inc.pos || seg.on[p], pl = o.players.find(x => x.name === inc.inP);
+    if (pl && !pl.pos.includes(q)) { pl.pos = [...pl.pos, q]; extra = q; res = R.replan(S.plan, o); }
+  }
   if (res.error) { incMsg = res.warnings.join(" "); incBusy = false; render(); return; }
   res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, extraPos: extra, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
   // Une règle ne peut pas être tenue : on montre pourquoi avant d'appliquer.
@@ -414,7 +424,7 @@ function swapPanel(seg){
     <div class="inc-players">${onField.map(n => `<button class="btn" data-swo="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)} <small>${esc(posShort(seg.on[n]))}</small></button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui entre ?</div>
     <div class="inc-players">${bench.map(n => `<button class="btn${outQ && !canQ(n) ? " dim" : ""}" data-swi="${esc(n)}" aria-pressed="${inc.inP===n}">${esc(n)}${outQ && !canQ(n) ? " <small>autre poste</small>" : ""}</button>`).join("") || '<span class="muted">Personne sur le banc</span>'}</div>
-    ${outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas en ${pill(outQ)} : les joueurs seront réorganisés.`} Le reste du plan est recalculé.</div>` : ""}
+    ${outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas ${esc(posName(outQ).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(outQ).toLowerCase())} jusqu'à la fin du match.`} Le reste du plan est recalculé.</div>` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
     <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.player && inc.inP && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider"}</button><button class="btn" id="incCancel">Annuler</button></div>
   </div>`;
@@ -434,7 +444,7 @@ function incidentPanel(seg){
   const subs = q ? injuryBench(seg, inc.player, matchT()) : [];
   if (q && inc.inP === undefined) inc.inP = subs[0]?.name || null;
   const subHtml = q ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui le remplace au poste ${pill(q)} ${esc(posName(q))} ?</div>
-    <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && x.knows ? " <small>conseillé</small>" : x.knows ? "" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
+    <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && (x.knows || x.line) ? " <small>conseillé</small>" : ""}${x.knows ? "" : x.line ? " <small>même ligne</small>" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
     ${inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} ne joue pas ${esc(posName(q).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(q).toLowerCase())} jusqu'à la fin du match.</div>` : ""}` : "";
   return `<div class="card incp"><h2>Imprévu</h2>
     <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
@@ -742,12 +752,12 @@ function matchView(){
         </div>` : ""}
       </div>
       ${alertHtml}
-      <div class="actions">
+      ${matchOver ? "" : `<div class="actions">
         <button class="btn warnb big" id="incOpen">⚠ Imprévu</button>
         <button class="btn big" id="swapOpen">↔ Hors plan</button>
       </div>
       ${S.prevPlan || (ADJ && S.hasPrev) ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
-      ${incidentPanel(seg)}
+      ${incidentPanel(seg)}`}
     </div>
     <div class="mcol">
       <div class="card">
@@ -877,13 +887,25 @@ function bindOnboard(){
 /* ---------- accueil ---------- */
 function homeView(){
   const ready = !!S.plan, title = matchTitle(), hi = `Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !`;
-  if (!S.squad.length) return `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
+  if (!S.squad.length) return pinNudge() + `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
   <button class="btn dark big" id="hCoach">Créer mon équipe →</button>
   ${accountNudge()}${howTo()}`;
-  return `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
+  return pinNudge() + `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
   <div class="tiles"><div class="tile"><b>${present().length}</b><span>présents</span></div><div class="tile"><b>${ready ? visChanges(S.plan).length : "–"}</b><span>changements</span></div><div class="tile"><b>${esc(S.preset)}</b><span>système</span></div></div>
   ${ready ? `<button class="btn dark big" id="hMatch">Ouvrir le match →</button>` : `<button class="btn primary big" id="hCoach">Préparer le match →</button>`}
   ${accountNudge()}${S.plan ? "" : howTo()}`;
+}
+// Sans code, les notes et les temps visés sont visibles par tous : on le demande dès l'Accueil.
+function pinNudge(){
+  if (S.pin) return "";
+  return `<div class="card incp"><h2>Choisis ton code de verrouillage</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Ce téléphone n'a pas encore de code : n'importe qui peut ouvrir la page Coach et voir les notes. Le code (4 ou 6 chiffres) la ferme. Il n'est pas dans les fichiers de sauvegarde, il faut donc le choisir sur chaque téléphone.</p>
+    <div class="form" style="max-width:480px"><label class="fld"><span>Code (4 ou 6 chiffres)</span>${pinField("pinSet", "Nouveau code")}</label><label class="fld"><span>Confirme le code</span>${pinField("pinSet2", "Confirme le code")}</label></div>
+    <div class="row" style="margin-top:10px"><button class="btn primary" id="pinSave">Enregistrer le code</button><span id="pinMsg" class="muted" style="font-size:.9rem"></span></div></div>`;
+}
+function bindPinSave(){
+  digitsOnly();
+  $("#pinSave")?.addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); const m = $("#pinMsg"); if (m) m.textContent = "Code enregistré."; });
 }
 function howTo(){
   return `<div class="card"><h2>Comment ça marche</h2>
@@ -899,6 +921,7 @@ function howTo(){
 function bindHome(){
   $("#hCoach")?.addEventListener("click", () => goTo("coach"));
   $("#hMatch")?.addEventListener("click", () => goTo("match"));
+  bindPinSave();
   bindAccountNudge();
 }
 
@@ -966,8 +989,7 @@ function bindSettings(){
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
   v.querySelectorAll("[data-xp]").forEach(b => b.addEventListener("click", () => { setOpen = setOpen === b.dataset.xp ? null : b.dataset.xp; render(); }));
   if (S.pin && !coachOK) { bindPin(); return; }
-  digitsOnly();
-  $("#pinSave")?.addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
+  bindPinSave();
   $("#profSave")?.addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
   $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
   bindAccountCard();
@@ -977,7 +999,7 @@ function bindSettings(){
 
 /* ---------- coach ---------- */
 function pinView(title = "Page coach", text = "Entre ton code de verrouillage pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p>${pinField("pinIn", "Code de verrouillage")}<div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
-function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
+function bindPin(onOk){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; if (onOk) onOk(); render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
 let coachTab = "match", coachStep = null, squadMsg = "";
 const TIME_HELP = {notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."};
@@ -1095,7 +1117,7 @@ function rulesBody(){
   const r = S.rules, lock = matchStarted();
   const tabs = `<button class="pchip-q base" data-perq="base" aria-pressed="${rulesQ === null}">${halves() ? "Mi-temps" : "Quart"}<small>de base</small></button>` + Array.from({length:r.quarters}, (_, q) => { const n = perDiff(q).length; return `<button class="pchip-q${n ? " diff" : ""}" data-perq="${q}" aria-pressed="${rulesQ === q}">${pShort(q+1)}<small>${n ? n + (n > 1 ? " différences" : " différence") : "comme la base"}</small></button>`; }).join("");
   const base = `<div class="per-ed"><div class="per-h"><b>${baseName()}</b></div>
-    <p class="muted" style="margin:0 0 4px;font-size:.88rem">Ces règles valent pour ${halves() ? "les 2 mi-temps" : "les 4 quarts"}. Touche ${halves() ? "MT1 ou MT2" : "Q1 à Q4"} pour en changer une seule.</p>
+    <p class="muted" style="margin:0 0 4px;font-size:.88rem">Règle d'abord ${baseName().toLowerCase()} : ${halves() ? "les 2 mi-temps le suivent" : "les 4 quarts le suivent"} automatiquement. Pour qu'${halves() ? "une mi-temps soit différente" : "un quart soit différent"}, touche ${halves() ? "MT1 ou MT2" : "Q1 à Q4"} et change seulement ce qui doit l'être.</p>
     ${PER_RULES.map(([k]) => matchRule(k)).join("")}</div>`;
   return `${rulesTimeline()}
   <div class="grp-t">Format du match</div>
