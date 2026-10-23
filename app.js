@@ -93,14 +93,28 @@ function computeTargets(){
   const ids = PRESETS[S.preset].map(p => p[0]);
   const gk = ids[0];
   const P = present().map(p => ({name:p.name, note:+p.note, override: p.minutes ? +p.minutes : 0, field: p.pos.some(q => q !== gk)}));
-  return R.targetsFromNotes(P, ids.length - 1, END).targets;
+  const tm = timeMode(), byNotes = R.targetsFromNotes(P, ids.length - 1, END).targets;
+  if (tm === "notes") return byNotes;
+  // Égal pour tous : un seul groupe. Égal par ligne : la ligne du premier poste du joueur.
+  const groupOf = id => tm === "all" ? "all" : lineGroup(posMeta(id).line);
+  const slots = {}; ids.slice(1).forEach(id => slots[groupOf(id)] = (slots[groupOf(id)] || 0) + 1);
+  P.forEach(x => { const pl = present().find(p => p.name === x.name); x.group = groupOf(pl.pos.find(q => q !== gk) || ""); });
+  const eq = R.targetsEqual(P, slots, END).targets;
+  P.forEach(x => { if (!x.field) eq[x.name] = byNotes[x.name]; }); // le gardien garde son calcul habituel
+  return eq;
 }
+// Temps de jeu du match : "notes" (étoiles et minutes fixées), "all" (égal pour tous), "line" (égal par ligne).
+const timeMode = () => S.timeMode || "notes";
+const lineGroup = l => l === "def" ? "def" : l === "att" ? "att" : "mid";
+const TIME_MODES = [["notes","Selon mes choix"],["all","Égal pour tous"],["line","Égal par ligne"]];
+// En temps égal, les étoiles des joueurs de champ ne comptent pas (pas de joueur bloqué tout le match).
+const star = p => timeMode() === "notes" || !p.pos.some(q => q !== "G") ? +p.note : 0;
 function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); }
 function generate(seed){
   syncMinStint();
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
-  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: (+p.note >= 5 && !p.minutes), oneBlock: +p.note >= 5, maxStint: p.maxStint ? +p.maxStint : 0, roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
+  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: (star(p) >= 5 && !p.minutes), oneBlock: star(p) >= 5, maxStint: p.maxStint ? +p.maxStint : 0, roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -147,7 +161,7 @@ function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; 
 /* ---------- plusieurs matchs ---------- */
 // Le match ouvert vit dans S (plan, compo, feuille, présents) et le chrono dans C.
 // Les autres matchs sont rangés dans S.matches ; on échange en changeant de match.
-const MATCH_KEYS = ["matchLabel","matchDate","preset","lineup","plan","prevPlan","basePlan","sheet"];
+const MATCH_KEYS = ["matchLabel","matchDate","preset","timeMode","lineup","plan","prevPlan","basePlan","sheet"];
 const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 let matchesOpen = false, newMatchForm = false;
@@ -170,7 +184,7 @@ function openMatch(id, store = true){
   const r = S.matches.find(m => m.id === id); if (!r) return;
   S.curMatch = id;
   S.matchLabel = r.matchLabel || ""; S.matchDate = r.matchDate || "";
-  S.preset = r.preset || S.preset; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null;
+  S.preset = r.preset || S.preset; S.timeMode = r.timeMode || "notes"; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null;
   S.sheet = r.sheet || {us:[], them:[], pc:0, log:[]};
   if (Array.isArray(r.present)) S.squad.forEach(p => p.present = r.present.includes(p.name));
   C = r.clock || freshClock(); C.running = false;
@@ -179,7 +193,7 @@ function openMatch(id, store = true){
 function createMatch(opp, date, home){
   if (S.curMatch) storeCur();
   const us = S.profile?.club || S.teamName || "Nous";
-  const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, lineup:{...S.lineup}, plan:null, prevPlan:null, basePlan:null, sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
+  const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, timeMode:timeMode(), lineup:{...S.lineup}, plan:null, prevPlan:null, basePlan:null, sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
   S.matches.push(r); openMatch(r.id, false);
 }
 function removeMatch(id){
@@ -253,7 +267,7 @@ function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).m
 function replanBase(T){
   const positions = PRESETS[S.preset].map(x => ({id:x[0], gk:x[2]==="gk"}));
   const Tg = computeTargets();
-  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(+x.note>=5 && !x.minutes), oneBlock: +x.note>=5, maxStint: x.maxStint ? +x.maxStint : 0, roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(star(x)>=5 && !x.minutes), oneBlock: star(x)>=5, maxStint: x.maxStint ? +x.maxStint : 0, roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
@@ -834,6 +848,8 @@ function coachView(){
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Match en préparation</h2><button class="btn small" id="cList">Mes matchs (${S.matches.length})</button></div>
     <div class="row" style="margin-top:10px"><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="Nom du match, ex. Wellington – Daring" aria-label="Nom du match" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600">
       <input type="date" id="mDate" value="${esc(S.matchDate||"")}" aria-label="Date du match" style="border:1px solid var(--rule);border-radius:8px;padding:7px 10px;background:var(--bg)"></div>
+    <div class="set" style="margin-top:12px"><span>Temps de jeu</span><div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div></div>
+    <p class="muted" style="margin:6px 0 0;font-size:.9rem">${({notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."})[timeMode()]}</p>
   </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Effectif</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Coche les présents. Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Laisse « Minutes » vide pour un calcul automatique à partir des notes. Corners : D donneur, B bloqueur.</p>
@@ -891,6 +907,7 @@ function bindCoach(){
   $("#mLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value.trim(); persist(); render(); });
   $("#mDate")?.addEventListener("change", e => { S.matchDate = e.target.value; persist(); render(); });
   $("#saveMatchC")?.addEventListener("click", saveMatch);
+  document.querySelectorAll("[data-tmode]").forEach(b => b.addEventListener("click", () => { S.timeMode = b.dataset.tmode; preview = null; persist(); render(); }));
   $("#cList")?.addEventListener("click", () => { matchesOpen = true; goTo("match"); });
   document.querySelectorAll("[data-delm]").forEach(b => b.addEventListener("click", () => { if (b.dataset.armed) deleteMatch(b.dataset.delm); else { b.dataset.armed = 1; b.textContent = "Sûr ?"; } }));
   $("#gen").addEventListener("click", () => { const b = $("#gen"); b.disabled = true; b.textContent = "Calcul…"; setTimeout(() => { preview = generate(Date.now() % 100000 + (seedN++)); render(); }, 30); });

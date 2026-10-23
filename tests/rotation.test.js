@@ -110,3 +110,20 @@ test("blessure : un remplaçant hors poste prend un poste qu'il connaît, un jou
   const ch = res.changes.find(c => Math.abs(c.t - TB) < EPS);
   assert.ok(ch && ch.moves.length >= 1, "aucune réorganisation annoncée");
 });
+
+test("temps égal pour tous : même temps pour les joueurs de champ, minutes fixées respectées", () => {
+  const P = [{name:"G", field:false}, {name:"A", field:true, group:"all"}, {name:"B", field:true, group:"all"}, {name:"C", field:true, group:"all", override:20}];
+  const t = R.targetsEqual(P, {all:2}, 70).targets;
+  assert.strictEqual(t.G, 0);
+  assert.strictEqual(t.C, 20);
+  assert.strictEqual(t.A, 60);
+  assert.strictEqual(t.B, 60);
+});
+
+test("temps égal par ligne : chaque ligne partage ses postes, jamais plus que le match", () => {
+  const P = [["D1","def"],["D2","def"],["D3","def"],["D4","def"],["M1","mid"],["M2","mid"],["A1","att"]].map(([name, group]) => ({name, field:true, group}));
+  const t = R.targetsEqual(P, {def:3, mid:2, att:2}, 70).targets;
+  assert.strictEqual(t.D1, 52.5);
+  assert.strictEqual(t.M1, 70);
+  assert.strictEqual(t.A1, 70);
+});

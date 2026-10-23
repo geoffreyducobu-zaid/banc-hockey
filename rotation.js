@@ -394,6 +394,20 @@
     return { targets: out, k, budget };
   }
 
+  // Temps égal : P = [{name, override, field, group}], slots = {group: nombre de postes}.
+  // Chaque groupe partage à égalité son temps (postes × durée), moins les minutes fixées.
+  function targetsEqual(P, slots, END) {
+    const out = {};
+    P.forEach(p => { if (!p.field) out[p.name] = 0; else if (p.override) out[p.name] = p.override; });
+    for (const g of Object.keys(slots)) {
+      const inG = P.filter(p => p.field && p.group === g);
+      const free = inG.filter(p => !p.override);
+      const budget = slots[g] * END - inG.filter(p => p.override).reduce((a, p) => a + p.override, 0);
+      free.forEach(p => out[p.name] = Math.max(0, Math.min(END, budget / free.length)));
+    }
+    P.forEach(p => { if (out[p.name] === undefined) out[p.name] = 0; });
+    return { targets: out };
+  }
 
   const ROLE_NAMES = { D: "donneur", B: "bloqueur" };
   function roleGaps(segs, roles, avail) {
@@ -500,6 +514,6 @@
     return { segs, changes, played, targets, intervals: iv, warnings: warnings || [], events, score: 0 };
   }
 
-  root.Rotation = { buildPlan, targetsFromNotes, fmtMin, changeTimes, replan, roleGaps };
+  root.Rotation = { buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
   if (typeof module !== 'undefined') module.exports = root.Rotation;
 })(typeof window !== 'undefined' ? window : globalThis);
