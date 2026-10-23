@@ -262,7 +262,7 @@ function injuryBench(seg, p, T){
   const q = seg.on[p], tg = S.plan.targets || {};
   return present().filter(x => !(x.name in seg.on) && !outForGood().includes(x.name))
     .map(x => ({name:x.name, knows: x.pos.includes(q) || extraPos(x.name).includes(q), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
-    .sort((a,b) => (b.knows - a.knows) || (b.left - a.left));
+    .sort((a,b) => (b.knows - a.knows) || (ADJ ? a.name.localeCompare(b.name) : b.left - a.left));
 }
 // Postes ajoutés en cours de match (joueur mis hors de son poste pour remplacer un blessé).
 function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).map(e => e.extraPos); }
@@ -321,7 +321,7 @@ function activeBanners(t){
     const i = INC[e.type];
     if (timedCard(e.type) && t >= e.t - 1e-6 && t < e.t + e.d) out.push(`<div class="banner ${e.type}"><b>${i.icon} ${esc(i.label)} : ${esc(e.player)}</b> exclu, on joue à 10. Retour dans <span data-until="${e.t+e.d}">${fmtClock((e.t+e.d-t)*60)}</span></div>`);
     if (e.type==="rouge" && t >= e.t - 1e-6) out.push(`<div class="banner rouge"><b>🟥 Carton rouge : ${esc(e.player)}</b> exclu jusqu'à la fin, on joue à 10.</div>`);
-    if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(`<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span>${ADJ ? "" : `<button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button>`}</div>`);
+    if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(`<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span><button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button></div>`);
     if (e.type==="retour" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner vert"><b>✚ ${esc(e.player)} de retour</b> : il est sur le banc, le plan lui redonne du temps.</div>`);
   });
   return out.join("");
@@ -496,7 +496,13 @@ function render(){
   paintSub();
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
   const v = $("#view");
-  if (ADJ) { document.body.classList.add("adjoint"); mode = "match"; const v2 = $("#view"); if (!S.plan) { v2.innerHTML = adjointWait(); return; } v2.innerHTML = matchView(); bindMatch(); return; }
+  if (ADJ) {
+    document.body.classList.add("adjoint"); mode = "match"; const v2 = $("#view");
+    if (!S.plan || adjEnded) { v2.innerHTML = adjointWait(); return; }
+    // Sans le téléphone du coach, rien ne serait partagé : on affiche le match mais tout est bloqué.
+    const off = !liveCoach; document.body.classList.toggle("adj-off", off);
+    v2.innerHTML = (off ? `<div class="warn" style="font-weight:600">Le téléphone du coach n'est plus connecté : tu ne peux rien modifier en attendant. Tout redevient actif dès qu'il revient.</div>` : "") + matchView(); bindMatch(); return;
+  }
   const acc = accountScreen(), onboard = !!acc || !S.profile;
   document.body.classList.toggle("onboard", onboard);
   if (acc) { v.innerHTML = acc; bindAccount(); return; }
@@ -587,6 +593,7 @@ function matchView(){
   return `<div class="match">
     <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
       ${shareCard()}
+      ${ADJ && !inc && incMsg ? `<div class="warn">${esc(incMsg)}</div>` : ""}
       ${banners}
       ${incidentPanel(seg)}
       <div class="card clock">
@@ -604,9 +611,9 @@ function matchView(){
       ${alertHtml}
       <div class="card clock">
         <div class="row">
-          ${ADJ ? "" : `<button class="btn warnb" id="incOpen">⚠ Imprévu</button>
-          <button class="btn small" id="swapOpen">↔ Changement</button>`}
-          ${S.prevPlan && !ADJ ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
+          <button class="btn warnb" id="incOpen">⚠ Imprévu</button>
+          <button class="btn small" id="swapOpen">↔ Changement</button>
+          ${S.prevPlan || (ADJ && S.hasPrev) ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
           <button class="btn" id="farOn">⤢ Vue de loin</button>
           ${liveButton()}
         </div>
@@ -615,7 +622,7 @@ function matchView(){
           <button class="btn" id="qReset">↺ Quart à 0</button>
           <button class="btn" id="qPrev" ${C.q<=1?"disabled":""}>◂ Quart préc.</button>
           <button class="btn" id="qNext" ${C.q>=S.rules.quarters?"disabled":""}>Quart suiv. ▸</button>
-          ${ADJ ? "" : `<button class="btn" id="reset">Match à 0</button>`}
+          <button class="btn" id="reset">Match à 0</button>
         </div>
       </div>
       ${ADJ ? "" : sheetCard(seg)}
@@ -637,7 +644,7 @@ function bindMatch(){
   $("#m10")?.addEventListener("click", () => adjust(-10));
   $("#p10")?.addEventListener("click", () => adjust(10));
   $("#doneBtn")?.addEventListener("click", () => { const t = matchT(); const nx = visChanges(S.plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.36); if (nx) C.done.push(nx.t); pushClock(); render(); });
-  $("#reset")?.addEventListener("click", function(){ if (this.dataset.armed) { resetMatch(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
+  $("#reset")?.addEventListener("click", function(){ if (this.dataset.armed) { if (ADJ) adjAsk("reset"); else resetMatch(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
   $("#m60")?.addEventListener("click", () => adjust(-60));
   $("#p60")?.addEventListener("click", () => adjust(60));
   $("#qReset")?.addEventListener("click", () => setClock(C.q, 0));
@@ -648,7 +655,7 @@ function bindMatch(){
   $("#saveMatch")?.addEventListener("click", saveMatch);
   $("#incOpen")?.addEventListener("click", () => { inc = {type:null, player:null, catchUp:false}; incMsg = ""; render(); });
   $("#incCancel")?.addEventListener("click", () => { inc = null; render(); });
-  $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed) { S.plan = S.prevPlan; S.prevPlan = null; syncDone(); pushClock(); persist(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
+  $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed && ADJ) adjAsk("undo"); else if (this.dataset.armed) { S.plan = S.prevPlan; S.prevPlan = null; syncDone(); pushClock(); persist(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
   $("#swapOpen")?.addEventListener("click", () => { inc = {type:"libre", player:null, inP:null}; incMsg = ""; render(); });
   document.querySelectorAll("[data-swo]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.swo; render(); }));
   document.querySelectorAll("[data-swi]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swi; render(); }));
@@ -656,14 +663,14 @@ function bindMatch(){
   document.querySelectorAll("[data-inct]").forEach(b => b.addEventListener("click", () => { inc.type = b.dataset.inct; inc.inP = undefined; render(); }));
   document.querySelectorAll("[data-incp]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.incp; inc.inP = undefined; render(); }));
   document.querySelectorAll("[data-incin]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.incin; render(); }));
-  document.querySelectorAll("[data-heal]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) endInjury(this.dataset.heal); else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } }));
+  document.querySelectorAll("[data-heal]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { if (ADJ) adjAsk("heal", {player:this.dataset.heal}); else endInjury(this.dataset.heal); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } }));
   $("#incBack")?.addEventListener("click", () => { inc.pending = null; render(); });
   $("#catchUp")?.addEventListener("change", e => { inc.catchUp = e.target.checked; });
-  $("#incGo")?.addEventListener("click", () => { incBusy = true; render(); setTimeout(doIncident, 40); });
+  $("#incGo")?.addEventListener("click", () => { if (ADJ) { adjAsk("incident", {inc:adjInc(), force:!!inc.pending}); return; } incBusy = true; render(); setTimeout(doIncident, 40); });
 }
 function setFar(v){ far = v; try { localStorage.setItem("banc-far", v ? "1" : "0"); } catch(e){} render(); }
 document.addEventListener("keydown", e => {
-  if (mode !== "match" || !S.plan || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
+  if (mode !== "match" || !S.plan || (ADJ && (adjEnded || !liveCoach)) || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
   if (e.code === "Space") { e.preventDefault(); C.running ? pauseClock() : (clockElapsed() >= S.rules.qlen*60 - 0.5 ? (markBreakDone(), nextQuarter()) : startClock()); }
   else if (e.key === "ArrowRight") adjust(10);
   else if (e.key === "ArrowLeft") adjust(-10);
