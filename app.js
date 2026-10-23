@@ -494,7 +494,13 @@ function render(){
   paintSub();
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-current", b.dataset.tab === mode ? "page" : "false"));
   const v = $("#view");
-  if (ADJ) { document.body.classList.add("adjoint"); mode = "match"; const v2 = $("#view"); if (!S.plan) { v2.innerHTML = adjointWait(); return; } v2.innerHTML = matchView(); bindMatch(); return; }
+  if (ADJ) {
+    document.body.classList.add("adjoint"); mode = "match"; const v2 = $("#view");
+    if (!S.plan || adjEnded) { v2.innerHTML = adjointWait(); return; }
+    // Sans le téléphone du coach, rien ne serait partagé : on affiche le match mais tout est bloqué.
+    const off = !liveCoach; document.body.classList.toggle("adj-off", off);
+    v2.innerHTML = (off ? `<div class="warn" style="font-weight:600">Le téléphone du coach n'est plus connecté : tu ne peux rien modifier en attendant. Tout redevient actif dès qu'il revient.</div>` : "") + matchView(); bindMatch(); return;
+  }
   const acc = accountScreen(), onboard = !!acc || !S.profile;
   document.body.classList.toggle("onboard", onboard);
   if (acc) { v.innerHTML = acc; bindAccount(); return; }
@@ -649,7 +655,7 @@ function bindMatch(){
 }
 function setFar(v){ far = v; try { localStorage.setItem("banc-far", v ? "1" : "0"); } catch(e){} render(); }
 document.addEventListener("keydown", e => {
-  if (mode !== "match" || !S.plan || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
+  if (mode !== "match" || !S.plan || (ADJ && (adjEnded || !liveCoach)) || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
   if (e.code === "Space") { e.preventDefault(); C.running ? pauseClock() : (clockElapsed() >= S.rules.qlen*60 - 0.5 ? (markBreakDone(), nextQuarter()) : startClock()); }
   else if (e.key === "ArrowRight") adjust(10);
   else if (e.key === "ArrowLeft") adjust(-10);

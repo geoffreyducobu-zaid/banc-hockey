@@ -5,7 +5,7 @@
 // « Match à 0 », l'adjoint envoie une demande : c'est le téléphone du coach qui recalcule.
 const ADJ = (() => { try { return (new URLSearchParams(location.search).get("adjoint") || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 16) || null; } catch(e){ return null; } })();
 let liveCh = null, liveCode = null, liveOK = false, liveAdj = 0, liveCoach = false, liveTimer = null;
-let shareOpen = false, shareMsg = "";
+let shareOpen = false, shareMsg = "", adjEnded = false;
 const LIVE_ON = CLOUD_ON;
 const liveUrl = code => appUrl() + "?adjoint=" + code;
 function genLiveCode(){ const A = "abcdefghjkmnpqrstuvwxyz23456789", r = new Uint32Array(10); crypto.getRandomValues(r); return Array.from(r, x => A[x % A.length]).join(""); }
@@ -38,6 +38,7 @@ function liveConnect(code){
   if (ADJ) {
     ch.on("broadcast", {event:"state"}, ({payload}) => applyCoachState(payload));
     ch.on("broadcast", {event:"answer"}, ({payload}) => adjAnswer(payload));
+    ch.on("broadcast", {event:"end"}, () => adjEnd());
   } else {
     ch.on("broadcast", {event:"hello"}, () => liveSendState());
     ch.on("broadcast", {event:"ask"}, ({payload}) => coachAnswer(payload));
@@ -45,8 +46,10 @@ function liveConnect(code){
   ch.on("presence", {event:"sync"}, () => {
     const all = Object.values(ch.presenceState()).flat();
     liveAdj = all.filter(p => p.role === "adjoint").length;
+    const was = liveCoach;
     liveCoach = all.some(p => p.role === "coach");
     paintLive();
+    if (ADJ && was !== liveCoach) render();
   });
   ch.subscribe(status => {
     liveOK = status === "SUBSCRIBED";
@@ -123,7 +126,7 @@ function shareStart(){
   if (!S.liveCode) { S.liveCode = genLiveCode(); persist(); }
   liveConnect(S.liveCode); shareOpen = true; shareMsg = ""; render();
 }
-function shareEnd(){ liveStop(); delete S.liveCode; persist(); shareOpen = false; render(); }
+function shareEnd(){ if (liveCh && liveOK) liveCh.send({type:"broadcast", event:"end", payload:{}}); liveStop(); delete S.liveCode; persist(); shareOpen = false; render(); }
 function qrSvg(text){
   try { const q = qrcode(0, "M"); q.addData(text); q.make(); return q.createSvgTag({cellSize:5, margin:2, scalable:true}); } catch(e){ return ""; }
 }
@@ -164,11 +167,20 @@ function paintLive(){
 }
 
 /* ---------- adjoint ---------- */
+// Le coach a coupé le lien : l'adjoint perd tout, il ne peut plus rien toucher.
+function adjEnd(){
+  adjEnded = true; liveStop(); clearTimeout(adjWait); adjWait = null;
+  S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:{...DEFAULT_RULES}, plan:null, pin:""};
+  C = freshClock(); inc = null; incBusy = false; incMsg = ""; far = false;
+  render();
+}
 function adjointWait(){
+  if (adjEnded) return `<div class="card empty"><h2>Partage arrêté</h2>
+    <p>Le coach a coupé ce lien. Pour suivre un match, demande-lui un nouveau lien.</p></div>`;
   return `<div class="card empty"><h2>Chrono de l'adjoint</h2>
     <p>${!navigator.onLine ? "Pas de réseau. Il en faut pour suivre le chrono du coach." : !liveOK ? "Connexion…" : "En attente du téléphone du coach. Demande-lui d'ouvrir l'onglet Match."}</p></div>`;
 }
-function adjointSub(){ return !navigator.onLine ? "Pas de réseau" : !liveOK ? "Connexion…" : liveCoach ? "● Connecté au coach" : "Coach pas connecté"; }
+function adjointSub(){ return adjEnded ? "Partage arrêté" : !navigator.onLine ? "Pas de réseau" : !liveOK ? "Connexion…" : liveCoach ? "● Connecté au coach" : "Coach pas connecté"; }
 function liveInit(){
   if (!LIVE_ON) return;
   window.addEventListener("online", () => { const c = liveCode; liveCode = null; if (c) liveConnect(c); paintLive(); });
