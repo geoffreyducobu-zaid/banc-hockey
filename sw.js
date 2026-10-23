@@ -1,14 +1,13 @@
 // Service worker : garde une copie de l'app sur le téléphone pour qu'elle
 // s'ouvre sans réseau. Change VERSION à chaque mise en ligne pour que les
 // téléphones récupèrent la nouvelle version (et le ?v= des scripts dans index.html).
-const VERSION = "banc-v15";
+const VERSION = "banc-v17";
 const FILES = [
   "./", "index.html", "app.js", "rotation.js", "cloud.js", "live.js", "config.js", "manifest.webmanifest",
   "vendor/jspdf.umd.min.js", "vendor/supabase.js", "vendor/qrcode.js", "fonts/fonts.css",
-  "fonts/barlow-latin-400-normal.woff2", "fonts/barlow-latin-500-normal.woff2",
-  "fonts/barlow-latin-600-normal.woff2", "fonts/barlow-latin-700-normal.woff2",
-  "fonts/barlow-condensed-latin-500-normal.woff2", "fonts/barlow-condensed-latin-600-normal.woff2",
-  "fonts/barlow-condensed-latin-700-normal.woff2", "fonts/barlow-condensed-latin-800-normal.woff2",
+  "fonts/inter-tight-latin-400-normal.woff2", "fonts/inter-tight-latin-500-normal.woff2",
+  "fonts/inter-tight-latin-600-normal.woff2", "fonts/inter-tight-latin-700-normal.woff2",
+  "fonts/inter-tight-latin-800-normal.woff2", "fonts/inter-tight-latin-800-italic.woff2",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
 
