@@ -168,3 +168,18 @@ test("match en 2 mi-temps : 11 joueurs, changements dans les fenêtres, banc max
   for (const c of pl.changes) assert.ok(inWindow(r, c.t), `changement à ${c.t}`);
   assert.strictEqual(pl.segs[pl.segs.length - 1].b, 70);
 });
+
+test("ancien format : le maximum d'affilée devient un maximum par ligne", () => {
+  const m = R.migrateRules({maxStint: 20});
+  assert.deepStrictEqual([m.maxDef, m.maxMid, m.maxAtt], [20, 20, 20]);
+  assert.strictEqual(R.migrateRules({maxStint: 20, maxDef: 25}).maxDef, 25, "un réglage par ligne existant est gardé");
+});
+
+test("maximum d'affilée par ligne : chaque joueur respecte le maximum de sa ligne", () => {
+  const maxL = {def: 14, dm: 18, mid: 18, att: 12};
+  const pl = players.map(p => ({...p, maxStint: p.maxStint || maxL[LINE[p.pos[0]]] || 0}));
+  const res = R.buildPlan({positions, players: pl, lineup: ex.lineup, rules, seed: 4242, iters: 150, saIters: 25000, chains: 2});
+  assert.ok(!res.error, String(res.warnings));
+  for (const p of pl) { if (p.oneBlock || !p.maxStint) continue;
+    for (const [a, b] of res.intervals[p.name]) assert.ok(b - a <= p.maxStint + EPS, `${p.name} : passage de ${b - a}' (max ${p.maxStint}')`); }
+});

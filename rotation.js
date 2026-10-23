@@ -54,6 +54,8 @@
       const f = r.firstChange != null ? +r.firstChange : 6, sb = r.startBlock != null ? +r.startBlock : 4;
       r.per = f !== sb ? { 0: { startBlock: f } } : {};
     }
+    // Ancien format : un seul maximum d'affilée -> un maximum par ligne (défense, milieu, attaque).
+    if (r.maxDef == null && r.maxStint != null) r.maxDef = r.maxMid = r.maxAtt = +r.maxStint;
     return r;
   }
 
