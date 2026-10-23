@@ -1,7 +1,8 @@
 // Chrono partagé avec l'adjoint (Supabase Realtime, sans compte pour l'adjoint).
 // Le coach ouvre un « canal » avec un code au hasard et donne le lien à son adjoint.
 // Le téléphone du coach envoie le plan (sans notes ni temps visés) et le chrono ;
-// les deux téléphones peuvent lancer, arrêter et régler le chrono.
+// les deux téléphones peuvent lancer, arrêter et régler le chrono. Pour un imprévu ou
+// « Match à 0 », l'adjoint envoie une demande : c'est le téléphone du coach qui recalcule.
 const ADJ = (() => { try { return (new URLSearchParams(location.search).get("adjoint") || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 16) || null; } catch(e){ return null; } })();
 let liveCh = null, liveCode = null, liveOK = false, liveAdj = 0, liveCoach = false, liveTimer = null;
 let shareOpen = false, shareMsg = "";
@@ -14,7 +15,7 @@ function adjointView(){
   let plan = null;
   if (S.plan) { plan = JSON.parse(JSON.stringify(S.plan)); delete plan.targets; delete plan.played; delete plan.warnings; delete plan.score; }
   return {teamName:S.teamName, color:S.color || DEFAULT_COLOR, profile:{club:S.profile?.club || ""}, matchLabel:S.matchLabel || "", matchDate:S.matchDate || "",
-    preset:S.preset, rules:S.rules, plan, sheet:S.sheet,
+    preset:S.preset, rules:S.rules, plan, sheet:S.sheet, hasPrev:!!S.prevPlan,
     squad:S.squad.map(p => ({name:p.name, pos:p.pos, present:p.present, roles:p.roles || []}))};
 }
 // Le chrono voyage en « temps écoulé à l'envoi » : pas besoin que les deux téléphones aient la même heure.
@@ -34,8 +35,13 @@ function liveConnect(code){
   liveCode = code;
   const ch = client.channel("stickmate-" + code, {config:{broadcast:{self:false}, presence:{key:SID}}});
   ch.on("broadcast", {event:"clock"}, ({payload}) => adoptClock(payload));
-  if (ADJ) ch.on("broadcast", {event:"state"}, ({payload}) => applyCoachState(payload));
-  else ch.on("broadcast", {event:"hello"}, () => liveSendState());
+  if (ADJ) {
+    ch.on("broadcast", {event:"state"}, ({payload}) => applyCoachState(payload));
+    ch.on("broadcast", {event:"answer"}, ({payload}) => adjAnswer(payload));
+  } else {
+    ch.on("broadcast", {event:"hello"}, () => liveSendState());
+    ch.on("broadcast", {event:"ask"}, ({payload}) => coachAnswer(payload));
+  }
   ch.on("presence", {event:"sync"}, () => {
     const all = Object.values(ch.presenceState()).flat();
     liveAdj = all.filter(p => p.role === "adjoint").length;
@@ -63,11 +69,53 @@ function liveSendState(){
 function liveChanged(){ if (ADJ || !liveCh) return; clearTimeout(liveTimer); liveTimer = setTimeout(liveSendState, 300); }
 function applyCoachState(p){
   if (!p?.view) return;
+  if (adjWait) { clearTimeout(adjWait); adjWait = null; inc = null; incBusy = false; incMsg = ""; }
   S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:{...DEFAULT_RULES}, plan:null, pin:""};
   applyData(p.view);
   adoptClock(p.clock);
   const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "");
   if (!typing) render();
+}
+
+/* ---------- demandes de l'adjoint ---------- */
+let adjWait = null;
+function adjAsk(kind, data = {}){
+  if (!liveCh || !liveOK || !liveCoach) { incBusy = false; incMsg = "Le téléphone du coach n'est pas connecté : il doit avoir StickMate ouvert, avec du réseau."; render(); return; }
+  incBusy = true; incMsg = ""; render();
+  liveCh.send({type:"broadcast", event:"ask", payload:{kind, ...data, from:SID}});
+  clearTimeout(adjWait);
+  adjWait = setTimeout(() => { adjWait = null; incBusy = false; incMsg = "Pas de réponse du téléphone du coach (app fermée ou pas de réseau ?). Réessaie."; render(); }, 8000);
+}
+const adjInc = () => ({type:inc.type, player:inc.player, inP:inc.inP ?? null, pos:inc.pos || null, catchUp:!!inc.catchUp});
+function adjAnswer(p){
+  if (p?.to !== SID) return;
+  clearTimeout(adjWait); adjWait = null; incBusy = false;
+  if (p.warnings && inc) { inc.pending = {warnings:p.warnings}; incMsg = ""; }
+  else if (p.error) incMsg = p.error;
+  else { inc = null; incMsg = ""; }
+  render();
+}
+// Les avertissements qui parlent de temps visés ne partent pas tels quels chez l'adjoint.
+const adjWarnings = W => [...new Set(W.map(w => /au lieu de/.test(w) ? "Le temps de jeu prévu de certains joueurs ne pourra pas être respecté." : nicePos(w)))];
+// Sur le téléphone du coach : on fait ce que l'adjoint demande, sans toucher à ce que le coach est en train de faire.
+function coachAnswer(p){
+  if (!p?.kind || !S.plan) return;
+  const reply = r => liveCh?.send({type:"broadcast", event:"answer", payload:{to:p.from, ...r}});
+  const mine = inc, mineMsg = incMsg, mineBusy = incBusy;
+  let r = {ok:true};
+  incMsg = "";
+  if (p.kind === "reset") resetMatch();
+  else if (p.kind === "undo") { if (S.prevPlan) { S.plan = S.prevPlan; S.prevPlan = null; syncDone(); pushClock(); persist(); } }
+  else if (p.kind === "heal") { endInjury(p.player); if (incMsg) r = {error:incMsg}; }
+  else if (p.kind === "incident" && p.inc) {
+    inc = {...p.inc, inP: p.inc.inP ?? undefined};
+    doIncident();
+    if (inc?.pending && p.force) applyPlan(inc.pending);
+    else if (inc?.pending) r = {warnings:adjWarnings(inc.pending.warnings)};
+    else if (incMsg) r = {error:incMsg};
+  }
+  inc = mine === null ? null : mine; incMsg = mineMsg; incBusy = mineBusy;
+  clearTimeout(liveTimer); liveSendState(); reply(r); render();
 }
 
 /* ---------- coach : partager ---------- */
