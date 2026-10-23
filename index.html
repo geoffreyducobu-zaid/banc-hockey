@@ -296,6 +296,35 @@ tr.absent td:not(:first-child){opacity:.45}
 .xp .card+.card{margin-top:16px;padding-top:16px;border-top:1px solid var(--rule);border-radius:0}
 .xp .card>h2{font-size:1rem;margin-bottom:8px}
 .set-num{width:76px;border:1px solid var(--rule);border-radius:10px;padding:8px;background:var(--bg);text-align:right;font-weight:700;flex-shrink:0}
+/* Règles de rotation : frise du match, quarts différents, chiffres avec unité */
+.rnum{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+.rnum small{color:var(--muted);font-weight:600}
+.rline{display:flex;gap:8px;flex-wrap:wrap}
+.rline label{display:grid;gap:3px;font-size:.78rem;font-weight:600;color:var(--muted)}
+.rline .set-num{width:70px}
+.frise{background:var(--paper);border-radius:14px;padding:6px 14px 10px;margin-bottom:14px;border:1px solid var(--cardline)}
+.fz{display:grid;gap:5px;padding:9px 0}
+.fz-h{display:flex;justify-content:space-between;gap:8px;font-size:.88rem}
+.fz-h b{font-weight:800;font-style:italic}
+.fz-h span{color:var(--muted)}
+.fz.diff .fz-h b{color:var(--clubink)}
+.fz-t{position:relative;height:14px;border-radius:7px;background:var(--chip);overflow:hidden}
+.fz-t i{position:absolute;top:0;bottom:0;background:var(--in);border-radius:7px}
+.fz-tags{display:flex;gap:5px;flex-wrap:wrap}
+.fz-tags span{font-size:.74rem;background:var(--chip);border-radius:99px;padding:2px 8px;color:var(--muted)}
+.fz-brk{font-size:.74rem;color:var(--muted);display:flex;align-items:center;gap:6px;padding-top:2px}
+.fz-brk::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--rule)}
+.fz-brk.on::before{background:var(--in)}
+.perq{display:grid;gap:8px}
+.pchip-q{border:1.5px solid var(--rule);background:var(--paper);border-radius:12px;padding:8px 4px;font:800 1rem var(--display);font-style:italic;display:grid;gap:2px}
+.pchip-q small{font:600 .72rem var(--body);font-style:normal;color:var(--muted)}
+.pchip-q.diff small{color:var(--clubink);font-weight:700}
+.pchip-q[aria-pressed="true"]{background:var(--club);border-color:var(--club);color:var(--onclub)}
+.pchip-q[aria-pressed="true"] small{color:var(--onclub)}
+.per-ed{margin-top:12px;border-top:1px solid var(--rule);padding-top:12px}
+.per-h{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.pdiff{font-size:.78rem;font-weight:700;color:var(--clubink)}
+.set.own b{color:var(--clubink)}
 /* accueil */
 .hero{background:var(--club);color:var(--onclub);border-radius:20px;padding:20px;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:6px}
 .hero>*{position:relative;z-index:1}
@@ -321,12 +350,12 @@ tr.absent td:not(:first-child){opacity:.45}
   <button data-tab="settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Réglages</span></button>
 </nav>
 
-<script src="vendor/supabase.js?v=20"></script>
-<script src="config.js?v=20"></script>
-<script src="rotation.js?v=20"></script>
-<script src="vendor/qrcode.js?v=20"></script>
-<script src="cloud.js?v=20"></script>
-<script src="live.js?v=20"></script>
-<script src="app.js?v=20"></script>
+<script src="vendor/supabase.js?v=21"></script>
+<script src="config.js?v=21"></script>
+<script src="rotation.js?v=21"></script>
+<script src="vendor/qrcode.js?v=21"></script>
+<script src="cloud.js?v=21"></script>
+<script src="live.js?v=21"></script>
+<script src="app.js?v=21"></script>
 
 </body></html>

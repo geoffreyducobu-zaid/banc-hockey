@@ -65,7 +65,7 @@ function applyCloud(row){
   if (S.liveCode) liveConnect(S.liveCode);
   render();
 }
-function resetState(){ S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:{...DEFAULT_RULES}, plan:null, pin:""}; }
+function resetState(){ S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:defaultRules(), plan:null, pin:""}; }
 function clearLocal(){
   ["banc-state", "banc-season", "banc-clock", "banc-sync"].forEach(k => { try { localStorage.removeItem(k); } catch(e){} });
   SY = loadSync(); resetState(); applyData(SEED); ensureMatches();

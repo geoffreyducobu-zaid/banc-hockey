@@ -73,7 +73,7 @@ function liveChanged(){ if (ADJ || !liveCh) return; clearTimeout(liveTimer); liv
 function applyCoachState(p){
   if (!p?.view) return;
   if (adjWait) { clearTimeout(adjWait); adjWait = null; inc = null; incBusy = false; incMsg = ""; }
-  S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:{...DEFAULT_RULES}, plan:null, pin:""};
+  S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:defaultRules(), plan:null, pin:""};
   applyData(p.view);
   adoptClock(p.clock);
   const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "");
@@ -175,7 +175,7 @@ function paintLive(){
 // Le coach a coupé le lien : l'adjoint perd tout, il ne peut plus rien toucher.
 function adjEnd(){
   adjEnded = true; liveStop(); clearTimeout(adjWait); adjWait = null;
-  S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:{...DEFAULT_RULES}, plan:null, pin:""};
+  S = {squad:[], preset:"3-2-3-2", lineup:{}, rules:defaultRules(), plan:null, pin:""};
   C = freshClock(); inc = null; incBusy = false; incMsg = ""; far = false;
   render();
 }

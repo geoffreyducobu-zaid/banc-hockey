@@ -38,13 +38,31 @@
 
   function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
+  // Règle k pour la période q (0 = 1er quart ou 1re mi-temps) : l'exception de la période si elle existe, sinon la règle du match.
+  // Règles réglables par période : startBlock, endBlock, maxBench, maxEntries, breakChanges (pause avant la période), gkOnlyAtBreaks.
+  function rq(R, q, k) {
+    if (k === 'startBlock' && q === 0 && !R.per && R.firstChange != null) return R.firstChange; // ancien format
+    const o = R.per && R.per[q];
+    return o && o[k] !== undefined && o[k] !== null ? o[k] : R[k];
+  }
+
+  // Ancien format (firstChange = 1er changement du Q1) -> exceptions par période (per). firstChange reste écrit
+  // pour les anciennes versions de l'app ; quand per existe, le moteur l'ignore.
+  function migrateRules(r) {
+    r = JSON.parse(JSON.stringify(r || {}));
+    if (!r.per || typeof r.per !== 'object') {
+      const f = r.firstChange != null ? +r.firstChange : 6, sb = r.startBlock != null ? +r.startBlock : 4;
+      r.per = f !== sb ? { 0: { startBlock: f } } : {};
+    }
+    return r;
+  }
+
   function changeTimes(R) {
     const T = new Set();
     for (let q = 0; q < R.quarters; q++) {
       const qa = q * R.qlen;
-      if (q > 0 && R.breakChanges) T.add(+qa.toFixed(3));
-      const from = q === 0 ? R.firstChange : R.startBlock;
-      for (let m = Math.ceil(from); m <= R.qlen - R.endBlock + EPS; m += 1) T.add(+(qa + m).toFixed(3));
+      if (q > 0 && rq(R, q, 'breakChanges')) T.add(+qa.toFixed(3));
+      for (let m = Math.ceil(rq(R, q, 'startBlock')); m <= R.qlen - rq(R, q, 'endBlock') + EPS; m += 1) T.add(+(qa + m).toFixed(3));
     }
     const F = R.from || 0; return [...T].filter(t => t > F + EPS && t < R.quarters * R.qlen).sort((a, b) => a - b);
   }
@@ -60,6 +78,7 @@
     const segs = []; let last = F; const entriesAt = {};
     let viol = 0;
     const qStart = t => Math.floor((t + EPS) / R.qlen) * R.qlen;
+    const qIdx = t => Math.min(R.quarters - 1, Math.floor((t + EPS) / R.qlen));
     function advance(t) {
       if (t > last) { segs.push({ a: last, b: t, on: new Map(on) }); for (const p of on.keys()) st[p].played += t - last; last = t; }
     }
@@ -67,7 +86,7 @@
       const t = T[i]; advance(t);
       const next = i + 1 < T.length ? T[i + 1] : END;
       const isBreak = Math.abs(t - qStart(t)) < EPS;
-      const qEnd = qStart(t) + R.qlen;
+      const qEnd = qStart(t) + R.qlen, qi = qIdx(t);
       const remain = END - t;
       const benchList = players.filter(p => !on.has(p));
       const onList = [...on.keys()];
@@ -75,14 +94,14 @@
       // eligibility
       const canEnter = p => remain >= I.minS[p] - EPS && (t - st[p].since) >= R.minBench - EPS;
       const canLeave = p => !locked.has(p) && (t - st[p].since) >= I.minS[p] - EPS;
-      const gkChangeOk = isBreak || !R.gkOnlyAtBreaks;
+      const gkChangeOk = isBreak || !rq(R, qi, 'gkOnlyAtBreaks');
       // forced
       const forcedOut = onList.filter(p => !locked.has(p) && (next - st[p].since) > I.maxS[p] + EPS && canLeave(p));
       const forcedIn = benchList.filter(p => {
         if (!canEnter(p)) return false;
         const bq = Math.max(st[p].since, qStart(t));
         const nextOpp = Math.min(next, qEnd);
-        return (nextOpp - bq) > R.maxBench + EPS && I.fieldPlayer[p];
+        return (nextOpp - bq) > rq(R, qi, 'maxBench') + EPS && I.fieldPlayer[p];
       });
       // candidates
       const ins = [], outs = [];
@@ -103,7 +122,7 @@
       const usedB = new Set(), usedO = new Set();
       const trial = new Set(onList);
       for (const [val, b, o] of pairs) {
-        if (usedB.size >= R.maxEntries) break;
+        if (usedB.size >= rq(R, qi, 'maxEntries')) break;
         if (usedB.has(b) || usedO.has(o)) continue;
         // gk restriction
         const touchesGK = (can[b].has(gkPos) && !I.fieldPlayer[b]) || on.get(o) === gkPos;
@@ -151,7 +170,7 @@
       for (const [a, b] of iv[p]) { if (a > t) off.push([t, a]); t = b; }
       if (t < END) off.push([t, END]);
       for (const [a, b] of off) for (let q = 0; q < R.quarters; q++) {
-        const qa = q * R.qlen; if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > R.maxBench + EPS) v += 1;
+        const qa = q * R.qlen; if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > rq(R, q, 'maxBench') + EPS) v += 1;
       }
     }
     for (let i = 1; i < res.segs.length; i++) {
@@ -179,7 +198,8 @@
     const F0 = R.from || 0; const grid = [F0, ...I.times, END];
     const nS = grid.length - 1; const dur = []; for (let s = 0; s < nS; s++) dur.push(grid[s + 1] - grid[s]);
     const isBreak = grid.map(t => t > 0 && Math.abs(t / R.qlen - Math.round(t / R.qlen)) < EPS);
-    const qOf = s => Math.floor((grid[s] + EPS) / R.qlen);
+    const qOf = s => Math.min(R.quarters - 1, Math.floor((grid[s] + EPS) / R.qlen));
+    const gkLock = grid.map((t, s) => !isBreak[s] && !!rq(R, qOf(s), 'gkOnlyAtBreaks')); // gardien qui ne change qu'à la pause
     const idx = {}; players.forEach((p, i) => idx[p] = i);
     const nP = players.length;
     // on matrix
@@ -201,7 +221,7 @@
           const pv = s > 0 ? on[s - 1][i] : 0;
           if (s < nS && v) played += dur[s];
           if (v && !pv) { // enter
-            if (s > 0) { entries[s]++; if (gkOnly[i] && !isBreak[s]) pen += 40; if (I.oneBlock.has(p)) pen += 200; }
+            if (s > 0) { entries[s]++; if (gkOnly[i] && gkLock[s]) pen += 40; if (I.oneBlock.has(p)) pen += 200; }
             if (s > 0) runStart = grid[s]; stints++;
             // bench just ended: check bench per quarter
             if (s > 0 && I.fieldPlayer[p] && !locked.has(p)) pen += benchPen(benchStart, grid[s]);
@@ -211,7 +231,7 @@
             if (L < I.minS[p] - EPS) pen += 300 + (I.minS[p] - L) * 30;
             if (I.minFirst[p] && Math.abs(runStart - F0) < EPS && F0 === 0 && L < I.minFirst[p] - EPS) pen += 300 + (I.minFirst[p] - L) * 30;
             if (!locked.has(p) && L > I.maxS[p] + EPS) pen += 300 + (L - I.maxS[p]) * 30;
-            if (s < nS && gkOnly[i] && !isBreak[s]) pen += 40;
+            if (s < nS && gkOnly[i] && gkLock[s]) pen += 40;
             benchStart = grid[s];
           }
           if (s === nS && !pv && I.fieldPlayer[p] && !locked.has(p)) pen += benchPen(benchStart, END);
@@ -223,15 +243,15 @@
         pen += d * 8 + Math.max(0, d - 1.5) * 20;
         if (!F0 && I.fieldPlayer[p] && targets[p] >= R.minPlay && played < R.minPlay - EPS) pen += 30 + (R.minPlay - played) * 20;
       }
-      for (let s = 1; s < nS; s++) if (entries[s]) { windows++; if (entries[s] > R.maxEntries) pen += 300 * (entries[s] - R.maxEntries); }
+      for (let s = 1; s < nS; s++) if (entries[s]) { windows++; const me = rq(R, qOf(s), 'maxEntries'); if (entries[s] > me) pen += 300 * (entries[s] - me); }
       return pen + windows * 3 + stints * 3 + sumSeg();
     }
     function benchPen(a, b) {
       let pen = 0;
       if (b - a < R.minBench - EPS && a > F0 + EPS && b < END) pen += 150;
       for (let q = 0; q < R.quarters; q++) {
-        const qa = q * R.qlen; const ov = Math.min(b, qa + R.qlen) - Math.max(a, qa);
-        if (ov > R.maxBench + EPS) pen += 300 + (ov - R.maxBench) * 30;
+        const qa = q * R.qlen, mb = rq(R, q, 'maxBench'); const ov = Math.min(b, qa + R.qlen) - Math.max(a, qa);
+        if (ov > mb + EPS) pen += 300 + (ov - mb) * 30;
       }
       return pen;
     }
@@ -363,10 +383,10 @@
       for (const [a, b] of iv[p]) { if (a > t) off.push([t, a]); t = b; }
       if (t < END) off.push([t, END]);
       for (const [a, b] of off) for (let q = 0; q < R.quarters; q++) {
-        const qa = q * R.qlen; if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > R.maxBench + EPS) check.push(`${p} : plus de ${R.maxBench}' sur le banc au Q${q + 1}`);
+        const qa = q * R.qlen, mb = rq(R, q, 'maxBench'); if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > mb + EPS) check.push(`${p} : plus de ${mb}' sur le banc ${R.quarters === 2 ? 'en MT' : 'au Q'}${q + 1}`);
       }
     }
-    for (const [t, n] of Object.entries(best.entriesAt)) if (n > R.maxEntries) check.push(`Trop d'entrées à ${t}'`);
+    for (const [t, n] of Object.entries(best.entriesAt)) if (n > rq(R, Math.min(R.quarters - 1, Math.floor((+t + EPS) / R.qlen)), 'maxEntries')) check.push(`Trop d'entrées à ${t}'`);
     check.push(...roleGaps(best.segs.map(s => ({ a: s.a, b: s.b, on: Object.fromEntries(s.on) })), roles, rolesAvail));
     for (const p of players) if (Math.abs(best.played[p] - targets[p]) > 2.5) check.push(`${p} : ${fmtMin(best.played[p])} au lieu de ${fmtMin(targets[p])}`);
     return { segs, changes, played: best.played, targets, intervals: iv, warnings: [...warnings, ...check], score: bestScore };
@@ -514,6 +534,6 @@
     return { segs, changes, played, targets, intervals: iv, warnings: warnings || [], events, score: 0 };
   }
 
-  root.Rotation = { buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
+  root.Rotation = { rq, migrateRules, buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
   if (typeof module !== 'undefined') module.exports = root.Rotation;
 })(typeof window !== 'undefined' ? window : globalThis);
