@@ -6,7 +6,7 @@ const PRESETS = {
   "4-4-2": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu gauche","mid",14,48,"MG"],["6","Milieu axial gauche","dm",38,54,"MAG"],["7","Milieu axial droit","dm",62,54,"MAD"],["8","Milieu droit","mid",86,48,"MD"],["9","Avant gauche","att",36,20,"AG"],["10","Avant droit","att",64,20,"AD"]],
   "3-3-3-1": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",22,62,"MDG"],["5","Milieu déf. axe","dm",50,64,"MDA"],["6","Milieu déf. droit","dm",78,62,"MDD"],["7","Milieu off. gauche","mid",22,40,"MOG"],["8","Milieu off. axe","mid",50,42,"MOA"],["9","Milieu off. droit","mid",78,40,"MOD"],["10","Avant centre","att",50,17,"AC"]]
 };
-const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:6,per:{0:{startBlock:6}},startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6,maxDef:22,maxMid:22,maxAtt:22};
+const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:4,per:{},startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6,maxDef:22,maxMid:22,maxAtt:22};
 // Règles copiées à neuf (per est un objet : jamais partagé avec DEFAULT_RULES).
 const defaultRules = () => JSON.parse(JSON.stringify(DEFAULT_RULES));
 // Quarts ou mi-temps : noms des périodes (q commence à 1).
@@ -58,7 +58,7 @@ function applyColor(){
 }
 const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
 let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
-let season = null, seasonMsg = "";
+let season = null, seasonMsg = "", pdfMsg = "";
 let saveState = "";
 let C = loadClock();
 
@@ -71,7 +71,7 @@ const fmtClock = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.flo
 const fmtQ = t => { const ql = S.rules.qlen; const q = Math.min(S.rules.quarters, Math.floor(t/ql + 1e-6) + 1); const m = t - (q-1)*ql; return {q, m, label: R.fmtMin(m)}; };
 
 /* ---------- storage ---------- */
-function applyData(v){ v = JSON.parse(JSON.stringify(v)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules:{...defaultRules(), ...R.migrateRules(v.rules)}}; }
+function applyData(v){ v = JSON.parse(JSON.stringify(v)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules: v.rules ? {...defaultRules(), ...R.migrateRules(v.rules)} : defaultRules()}; }
 function loadLocal(){ let v = null; try { v = JSON.parse(localStorage.getItem("banc-state") || "null"); } catch(e){} applyData(v || SEED); }
 // L'adjoint ne touche jamais aux données du téléphone : il ne fait qu'afficher le match du coach.
 function saveLocal(){ if (ADJ) return; try { localStorage.setItem("banc-state", JSON.stringify(S)); } catch(e){} }
@@ -182,7 +182,7 @@ function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; 
 const MATCH_KEYS = ["matchLabel","matchDate","preset","timeMode","lineup","plan","prevPlan","basePlan","sheet"];
 const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
-let matchesOpen = false, newMatchForm = false;
+let matchesOpen = false, newMatchForm = false, delPin = null;
 let toolsOpen = false, matchTab = "chg";
 function curMatchRec(){
   const r = {id:S.curMatch}; MATCH_KEYS.forEach(k => r[k] = S[k] ?? null);
@@ -296,6 +296,9 @@ function matchesView(){
       <button class="mopen" data-mopen="${esc(r.id)}"><b>${esc(r.matchLabel || "Match sans nom")}</b><span class="muted">${esc(fmtDate(r.matchDate))} · ${esc(matchStatus(r))}</span></button>
       ${r.id === S.curMatch ? `<span class="live">Ouvert</span>` : ""}
       <button class="x" data-mdel="${esc(r.id)}" aria-label="Supprimer ce match">✕</button></div>`).join("");
+  // Supprimer un match efface son plan et son score : on demande le code de verrouillage.
+  const delName = delPin && (sortedMatches().find(r => r.id === delPin)?.matchLabel || "Match sans nom");
+  if (delPin && S.pin && !coachOK) return pinView("Supprimer un match", `Entre ton code de verrouillage pour supprimer « ${delName} ».`) + `<button class="btn" id="delPinNo">Annuler</button>`;
   return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes matchs</h2><button class="btn small" id="mClose">Fermer</button></div>
     <div class="mlist2" style="margin-top:12px">${rows}</div>
     ${newMatchForm ? `<div class="form" style="margin-top:14px">
@@ -311,16 +314,20 @@ let nmHome = true;
 function segBtnsLocal(){ return `<div class="seg" role="group"><button data-nmhome="1" aria-pressed="${nmHome}">Domicile</button><button data-nmhome="0" aria-pressed="${!nmHome}">Extérieur</button></div>`; }
 function bindMatches(){
   $("#mList")?.addEventListener("click", () => { matchesOpen = true; toolsOpen = false; render(); window.scrollTo(0, 0); });
-  $("#mClose")?.addEventListener("click", () => { matchesOpen = false; newMatchForm = false; render(); });
+  $("#mClose")?.addEventListener("click", () => { matchesOpen = false; newMatchForm = false; delPin = null; render(); });
   $("#nmOpen")?.addEventListener("click", () => { newMatchForm = true; render(); $("#nmOpp")?.focus(); });
   $("#nmCancel")?.addEventListener("click", () => { newMatchForm = false; render(); });
   document.querySelectorAll("[data-nmhome]").forEach(b => b.addEventListener("click", () => { const o = $("#nmOpp").value, d = $("#nmDate").value; nmHome = b.dataset.nmhome === "1"; render(); $("#nmOpp").value = o; $("#nmDate").value = d; }));
   $("#nmGo")?.addEventListener("click", () => { createMatch($("#nmOpp").value.trim(), $("#nmDate").value, nmHome); newMatchForm = false; matchesOpen = false; render(); });
   document.querySelectorAll("[data-mopen]").forEach(b => b.addEventListener("click", () => { if (b.dataset.mopen !== S.curMatch) openMatch(b.dataset.mopen); matchesOpen = false; render(); }));
-  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
+  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (S.pin && !coachOK) { delPin = this.dataset.mdel; render(); return; } if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
+  if ($("#pinGo") && delPin) { bindPin(() => { const id = delPin; delPin = null; removeMatch(id); }); $("#pinIn").focus(); }
+  $("#delPinNo")?.addEventListener("click", () => { delPin = null; render(); });
 }
 // Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
-function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
+// Un match déjà fini et enregistré repart aussi de zéro : il sort de la saison et sera réenregistré à la fin.
+function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null;
+  if (S.plan?.savedAt) { const at = S.plan.savedAt; delete S.plan.savedAt; unsaveSeason(at); } S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
 function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Array.from({length:n}, () => [200,100]).flat()); } catch(e){} } if (!actx || !prefs.sound) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
@@ -336,8 +343,8 @@ function playedUntil(plan, n, t){ return plan.segs.reduce((a, s) => a + (n in s.
 function injuryBench(seg, p, T){
   const q = seg.on[p], tg = S.plan.targets || {};
   return present().filter(x => !(x.name in seg.on) && !outForGood().includes(x.name))
-    .map(x => ({name:x.name, knows: x.pos.includes(q) || extraPos(x.name).includes(q), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
-    .sort((a,b) => (b.knows - a.knows) || (ADJ ? a.name.localeCompare(b.name) : b.left - a.left));
+    .map(x => ({name:x.name, knows: x.pos.includes(q) || extraPos(x.name).includes(q), line: x.pos.some(z => lineGroup(posMeta(z).line) === lineGroup(posMeta(q).line)), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
+    .sort((a,b) => (b.knows - a.knows) || (b.line - a.line) || (ADJ ? a.name.localeCompare(b.name) : b.left - a.left));
 }
 // Postes ajoutés en cours de match (joueur mis hors de son poste pour remplacer un blessé).
 function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).map(e => e.extraPos); }
@@ -383,7 +390,12 @@ function doIncident(){
   }
   if (type === "rouge") { o.out.push(p); o.vacate.push(seg.on[p]); }
   if (timedCard(type)) { o.freezeUntil = Math.min(S.rules.quarters*S.rules.qlen, T + info.d); o.freezeOut = [p]; if (!inc.catchUp) o.adjust[p] = -info.d; }
-  const res = res0 || R.replan(S.plan, o);
+  let res = res0 || R.replan(S.plan, o);
+  // Hors plan : si personne ne peut être réorganisé, le joueur qui entre joue au poste du sortant jusqu'à la fin.
+  if (res.error && type === "libre" && seg.on[p]) {
+    const q = inc.pos || seg.on[p], pl = o.players.find(x => x.name === inc.inP);
+    if (pl && !pl.pos.includes(q)) { pl.pos = [...pl.pos, q]; extra = q; res = R.replan(S.plan, o); }
+  }
   if (res.error) { incMsg = res.warnings.join(" "); incBusy = false; render(); return; }
   res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, extraPos: extra, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
   // Une règle ne peut pas être tenue : on montre pourquoi avant d'appliquer.
@@ -412,14 +424,14 @@ function swapPanel(seg){
     <div class="inc-players">${onField.map(n => `<button class="btn" data-swo="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)} <small>${esc(posShort(seg.on[n]))}</small></button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui entre ?</div>
     <div class="inc-players">${bench.map(n => `<button class="btn${outQ && !canQ(n) ? " dim" : ""}" data-swi="${esc(n)}" aria-pressed="${inc.inP===n}">${esc(n)}${outQ && !canQ(n) ? " <small>autre poste</small>" : ""}</button>`).join("") || '<span class="muted">Personne sur le banc</span>'}</div>
-    ${outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas en ${pill(outQ)} : les joueurs seront réorganisés.`} Le reste du plan est recalculé.</div>` : ""}
+    ${outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas ${esc(posName(outQ).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(outQ).toLowerCase())} jusqu'à la fin du match.`} Le reste du plan est recalculé.</div>` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
     <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.player && inc.inP && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider"}</button><button class="btn" id="incCancel">Annuler</button></div>
   </div>`;
 }
 function incidentPanel(seg){
-  if (inc && inc.type === "libre") return swapPanel(seg);
   if (!inc) return "";
+  if (inc.type === "libre" && !inc.pending) return swapPanel(seg);
   const onField = Object.keys(seg.on);
   const card = timedCard(inc.type);
   if (inc.pending) return `<div class="card incp"><h2>À vérifier</h2>
@@ -432,7 +444,7 @@ function incidentPanel(seg){
   const subs = q ? injuryBench(seg, inc.player, matchT()) : [];
   if (q && inc.inP === undefined) inc.inP = subs[0]?.name || null;
   const subHtml = q ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui le remplace au poste ${pill(q)} ${esc(posName(q))} ?</div>
-    <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && x.knows ? " <small>conseillé</small>" : x.knows ? "" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
+    <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && (x.knows || x.line) ? " <small>conseillé</small>" : ""}${x.knows ? "" : x.line ? " <small>même ligne</small>" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
     ${inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} ne joue pas ${esc(posName(q).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(q).toLowerCase())} jusqu'à la fin du match.</div>` : ""}` : "";
   return `<div class="card incp"><h2>Imprévu</h2>
     <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
@@ -469,7 +481,7 @@ function bindSheet(){
 function loadJsPdf(){ return new Promise((ok, ko) => { if (window.jspdf) return ok(); const s = document.createElement("script"); s.src = "vendor/jspdf.umd.min.js"; s.onload = ok; s.onerror = ko; document.head.appendChild(s); }); }
 async function makePdf(){
   const btn = $("#pdfB"); if (btn) { btn.disabled = true; btn.textContent = "Préparation…"; }
-  const done = msg => { if (btn) { btn.disabled = false; btn.textContent = "📄 Plan B (PDF)"; } const m = $("#pinMsg"); seasonMsg = msg; render(); };
+  const done = msg => { if (btn) { btn.disabled = false; btn.textContent = "📄 Plan B (PDF)"; } pdfMsg = msg; render(); };
   try {
     await loadJsPdf();
     const { jsPDF } = window.jspdf; const doc = new jsPDF({unit:"mm", format:"a4"});
@@ -535,14 +547,19 @@ async function loadSeason(){
 }
 async function saveMatch(){
   const sh = sheet();
-  const rec = {date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => e.type!=="bless" && e.type!=="libre").map(e => ({type:e.type, player:e.player}))};
+  const rec = {match: S.curMatch || null, date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => e.type!=="bless" && e.type!=="libre").map(e => ({type:e.type, player:e.player}))};
   for (const [n,m] of Object.entries(S.plan.played)) rec.minutes[n] = Math.round(m*10)/10;
   for (const [n,m] of Object.entries(S.plan.targets||{})) rec.targets[n] = Math.round(m*10)/10;
   try {
-    const L = JSON.parse(localStorage.getItem("banc-season") || "[]"); L.push({id:String(Date.now()), ...rec}); localStorage.setItem("banc-season", JSON.stringify(L));
-    S.plan.savedAt = Date.now(); persist(); seasonMsg = "Match enregistré dans la saison ✓";
+    const at = Date.now(), L = JSON.parse(localStorage.getItem("banc-season") || "[]"); L.push({id:String(at), savedAt:at, ...rec}); localStorage.setItem("banc-season", JSON.stringify(L));
+    S.plan.savedAt = at; persist(); seasonMsg = "Match enregistré dans la saison ✓";
   } catch(e){ seasonMsg = "L'enregistrement a échoué, réessaie."; }
   season = null; render();
+}
+// Retire de la saison le match enregistré à l'instant « at » (même match, même enregistrement).
+function unsaveSeason(at){
+  try { const L = JSON.parse(localStorage.getItem("banc-season") || "[]"), K = L.filter(x => !(x.savedAt === at || Math.abs(+x.id - at) < 5000)); if (K.length !== L.length) localStorage.setItem("banc-season", JSON.stringify(K)); } catch(e){}
+  season = null; seasonMsg = "";
 }
 async function deleteMatch(id){
   try {
@@ -664,7 +681,7 @@ function matchView(){
   const qEndT = C.q*ql;
   let alertHtml;
   const matchOver = atEnd && C.q >= S.rules.quarters;
-  if (!next) alertHtml = `<div class="alert calm"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
+  if (!next) alertHtml = `<div class="alert calm"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver && !plan.savedAt ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
   else {
     const isBreakChange = Math.abs(next.t - qEndT) < 1e-6 && C.q < S.rules.quarters;
     const secs = (next.t - t) * 60;
@@ -735,12 +752,12 @@ function matchView(){
         </div>` : ""}
       </div>
       ${alertHtml}
-      <div class="actions">
+      ${matchOver ? "" : `<div class="actions">
         <button class="btn warnb big" id="incOpen">⚠ Imprévu</button>
         <button class="btn big" id="swapOpen">↔ Hors plan</button>
       </div>
       ${S.prevPlan || (ADJ && S.hasPrev) ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
-      ${incidentPanel(seg)}
+      ${incidentPanel(seg)}`}
     </div>
     <div class="mcol">
       <div class="card">
@@ -870,13 +887,25 @@ function bindOnboard(){
 /* ---------- accueil ---------- */
 function homeView(){
   const ready = !!S.plan, title = matchTitle(), hi = `Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !`;
-  if (!S.squad.length) return `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
+  if (!S.squad.length) return pinNudge() + `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
   <button class="btn dark big" id="hCoach">Créer mon équipe →</button>
   ${accountNudge()}${howTo()}`;
-  return `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
+  return pinNudge() + `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
   <div class="tiles"><div class="tile"><b>${present().length}</b><span>présents</span></div><div class="tile"><b>${ready ? visChanges(S.plan).length : "–"}</b><span>changements</span></div><div class="tile"><b>${esc(S.preset)}</b><span>système</span></div></div>
   ${ready ? `<button class="btn dark big" id="hMatch">Ouvrir le match →</button>` : `<button class="btn primary big" id="hCoach">Préparer le match →</button>`}
   ${accountNudge()}${S.plan ? "" : howTo()}`;
+}
+// Sans code, les notes et les temps visés sont visibles par tous : on le demande dès l'Accueil.
+function pinNudge(){
+  if (S.pin) return "";
+  return `<div class="card incp"><h2>Choisis ton code de verrouillage</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Ce téléphone n'a pas encore de code : n'importe qui peut ouvrir la page Coach et voir les notes. Le code (4 ou 6 chiffres) la ferme. Il n'est pas dans les fichiers de sauvegarde, il faut donc le choisir sur chaque téléphone.</p>
+    <div class="form" style="max-width:480px"><label class="fld"><span>Code (4 ou 6 chiffres)</span>${pinField("pinSet", "Nouveau code")}</label><label class="fld"><span>Confirme le code</span>${pinField("pinSet2", "Confirme le code")}</label></div>
+    <div class="row" style="margin-top:10px"><button class="btn primary" id="pinSave">Enregistrer le code</button><span id="pinMsg" class="muted" style="font-size:.9rem"></span></div></div>`;
+}
+function bindPinSave(){
+  digitsOnly();
+  $("#pinSave")?.addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); const m = $("#pinMsg"); if (m) m.textContent = "Code enregistré."; });
 }
 function howTo(){
   return `<div class="card"><h2>Comment ça marche</h2>
@@ -892,6 +921,7 @@ function howTo(){
 function bindHome(){
   $("#hCoach")?.addEventListener("click", () => goTo("coach"));
   $("#hMatch")?.addEventListener("click", () => goTo("match"));
+  bindPinSave();
   bindAccountNudge();
 }
 
@@ -959,8 +989,7 @@ function bindSettings(){
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
   v.querySelectorAll("[data-xp]").forEach(b => b.addEventListener("click", () => { setOpen = setOpen === b.dataset.xp ? null : b.dataset.xp; render(); }));
   if (S.pin && !coachOK) { bindPin(); return; }
-  digitsOnly();
-  $("#pinSave")?.addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
+  bindPinSave();
   $("#profSave")?.addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
   $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
   bindAccountCard();
@@ -970,9 +999,9 @@ function bindSettings(){
 
 /* ---------- coach ---------- */
 function pinView(title = "Page coach", text = "Entre ton code de verrouillage pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p>${pinField("pinIn", "Code de verrouillage")}<div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
-function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
+function bindPin(onOk){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; if (onOk) onOk(); render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
-let coachTab = "match", coachStep = null;
+let coachTab = "match", coachStep = null, squadMsg = "";
 const TIME_HELP = {notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."};
 // Une étape de la préparation du match : une ligne avec son état, qui s'ouvre au toucher.
 function step(id, n, done, title, summary, body){
@@ -987,15 +1016,16 @@ function coachView(){
 function squadTab(){
   const rows = S.squad.map((p,i) => `<tr>
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
-    <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
     <td><select data-i="${i}" data-k="note" aria-label="Note">${[2,2.5,3,3.5,4,4.5,5].map(n=>`<option ${+p.note===n?"selected":""}>${n}</option>`).join("")}</select></td>
+    <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
     <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="${p.pos.length ? maxStintOf(p) : "—"}" aria-label="Passage max"></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
   return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes joueurs (${S.squad.length})</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Corners : D donneur, B bloqueur.</p>
-    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes</th><th>Note</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${squadMsg ? `<div class="warn" style="margin-bottom:10px">${esc(squadMsg)}</div>` : ""}
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Note</th><th>Postes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
   </div>`;
 }
@@ -1087,7 +1117,7 @@ function rulesBody(){
   const r = S.rules, lock = matchStarted();
   const tabs = `<button class="pchip-q base" data-perq="base" aria-pressed="${rulesQ === null}">${halves() ? "Mi-temps" : "Quart"}<small>de base</small></button>` + Array.from({length:r.quarters}, (_, q) => { const n = perDiff(q).length; return `<button class="pchip-q${n ? " diff" : ""}" data-perq="${q}" aria-pressed="${rulesQ === q}">${pShort(q+1)}<small>${n ? n + (n > 1 ? " différences" : " différence") : "comme la base"}</small></button>`; }).join("");
   const base = `<div class="per-ed"><div class="per-h"><b>${baseName()}</b></div>
-    <p class="muted" style="margin:0 0 4px;font-size:.88rem">Ces règles valent pour ${halves() ? "les 2 mi-temps" : "les 4 quarts"}. Touche ${halves() ? "MT1 ou MT2" : "Q1 à Q4"} pour en changer une seule.</p>
+    <p class="muted" style="margin:0 0 4px;font-size:.88rem">Règle d'abord ${baseName().toLowerCase()} : ${halves() ? "les 2 mi-temps le suivent" : "les 4 quarts le suivent"} automatiquement. Pour qu'${halves() ? "une mi-temps soit différente" : "un quart soit différent"}, touche ${halves() ? "MT1 ou MT2" : "Q1 à Q4"} et change seulement ce qui doit l'être.</p>
     ${PER_RULES.map(([k]) => matchRule(k)).join("")}</div>`;
   return `${rulesTimeline()}
   <div class="grp-t">Format du match</div>
@@ -1155,7 +1185,9 @@ function matchPrepTab(){
       rulesBody())}
   </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Plan de rotation</h2>${S.plan ? `<button class="btn small" id="pdfB">📄 Plan B (PDF)</button>` : ""}</div>
+    ${pdfMsg && S.plan ? `<div class="muted" style="margin-top:6px;font-size:.9rem">${esc(pdfMsg)}</div>` : ""}
     ${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
+    ${S.plan && !preview && !S.plan.savedAt && Object.keys(S.plan.played || {}).some(n => !S.squad.some(p => p.name === n)) ? `<div class="warn" style="margin-top:10px">Un joueur du plan a été renommé ou supprimé. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     ${S.plan && !preview && S.plan.rulesSig && S.plan.rulesSig !== rulesSig() && !matchStarted() ? `<div class="warn" style="margin-top:10px">Les règles ont changé depuis ce plan. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     <div class="row" style="margin-top:10px"><button class="btn primary${preview ? "" : " big"}" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go big" id="use">Utiliser pour le match</button>` : ""}</div>
     <div id="genOut" style="margin-top:12px">${previewHtml()}</div>
@@ -1180,6 +1212,14 @@ function bindCoach(){
   bindTeams();
   v.querySelectorAll("[data-i]").forEach(el => el.addEventListener("change", () => {
     const p = S.squad[+el.dataset.i], k = el.dataset.k;
+    if (k === "name") {
+      const nn = el.value.trim(), old = p.name;
+      // Le plan et la compo retrouvent les joueurs par leur nom : il doit être unique.
+      if (!nn || S.squad.some(x => x !== p && x.name.trim().toLowerCase() === nn.toLowerCase())) { squadMsg = nn ? `Il y a déjà un joueur « ${nn} ». Ajoute l'initiale du nom, ex. « ${nn} D. ».` : "Le nom ne peut pas être vide."; render(); return; }
+      squadMsg = ""; p.name = nn;
+      for (const q in S.lineup) if (S.lineup[q] === old) S.lineup[q] = nn;
+      preview = null; persist(); render(); return;
+    }
     if (k === "present") p.present = el.checked;
     else if (k === "pos") p.pos = el.value.split(/[ ,;/]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
     else if (k === "note") p.note = +el.value;
@@ -1191,7 +1231,7 @@ function bindCoach(){
   v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; p.pos = p.pos.filter(q => q !== b.dataset.q); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
-  $("#addP")?.addEventListener("click", () => { S.squad.push({name:"Nouveau joueur",pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
+  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
   $("#preset")?.addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
   v.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => { coachTab = b.dataset.ctab; render(); }));
