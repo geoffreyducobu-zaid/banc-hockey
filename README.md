@@ -28,3 +28,7 @@ Ouvrir `index.html` dans un navigateur. L'app démarre vide : donne un nom à to
 ## Mise en ligne
 
 L'app est publiée par GitHub Pages depuis la branche `main`. `manifest.webmanifest` et `sw.js` la rendent installable sur l'écran d'accueil et utilisable sans réseau. À chaque mise en ligne qui change des fichiers de l'app, augmenter `VERSION` dans `sw.js`.
+
+## Droits
+
+© 2026 Geoffrey Ducobu. Tous droits réservés. Le code est visible, mais il n'est pas libre : aucune réutilisation sans accord écrit (voir `LICENSE`).

@@ -1,6 +1,7 @@
 {
   "name": "banc-hockey",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Outil de banc pour coachs de hockey sur gazon",
   "scripts": {
     "test": "node --test tests/*.test.js"
