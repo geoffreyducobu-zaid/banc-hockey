@@ -132,7 +132,7 @@ function generate(seed){
     if (!best || p.warnings.length < best.warnings.length || (p.warnings.length === best.warnings.length && p.score < best.score)) best = p;
     if (!best.warnings.length) break;
   }
-  if (best) { best.timeMode = timeMode(); best.rulesSig = rulesSig(); }
+  if (best) { best.timeMode = timeMode(); best.rulesSig = rulesSig(); best.fmt = fmtSig(); }
   return best;
 }
 let _vcPlan = null, _vc = [];
@@ -342,7 +342,7 @@ function replanBase(T){
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
 }
-function applyPlan(res){ if (S.plan?.timeMode) res.timeMode = S.plan.timeMode; if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
+function applyPlan(res){ ["timeMode", "rulesSig", "fmt"].forEach(k => { if (S.plan?.[k]) res[k] = S.plan[k]; }); if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
 function endInjury(n){
   const T = Math.floor(matchT()*10)/10;
   const o = replanBase(T); o.out = o.out.filter(x => x !== n);
@@ -617,7 +617,7 @@ function matchView(){
   const plan = S.plan;
   if (!plan) return `<div class="card empty"><h2>Pas encore de plan</h2><p class="muted">Va dans la page Coach : coche les présents, choisis la compo, puis génère le plan de rotation.</p><button class="btn primary" id="goCoach">Aller à la page Coach</button></div>`;
   const fEnd = plan.segs[plan.segs.length - 1].b, END = S.rules.quarters * S.rules.qlen;
-  if (Math.abs(fEnd - END) > 1e-6) return `<div class="card empty"><h2>Plan à refaire</h2><p class="muted">Ce plan a été fait pour un match de ${R.fmtMin(fEnd)}. Tes règles disent maintenant ${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}. Génère un nouveau plan dans la page Coach.</p><button class="btn primary" id="goCoach">Aller à la page Coach</button></div>`;
+  if (!plan.savedAt && (Math.abs(fEnd - END) > 1e-6 || (plan.fmt && plan.fmt !== fmtSig()))) { const [pq, pl] = (plan.fmt || "").split("x"); return `<div class="card empty"><h2>Plan à refaire</h2><p class="muted">Ce plan a été fait pour ${plan.fmt ? (+pq === 2 ? "2 mi-temps" : pq + " quarts") + " de " + R.fmtMin(+pl) : "un match de " + R.fmtMin(fEnd)}. Tes règles disent maintenant ${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}. Génère un nouveau plan dans la page Coach.</p><button class="btn primary" id="goCoach">Aller à la page Coach</button></div>`; }
   const ql = S.rules.qlen, el = clockElapsed(), t = matchT();
   const atEnd = el >= ql*60 - 0.5;
   const next = visChanges(plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.01 - 0.35);
@@ -978,6 +978,7 @@ const PER_RULES = [
   ["gkOnlyAtBreaks", "bool", "Gardien changé seulement à la pause", "", "Jamais de changement de gardien pendant le jeu."],
 ];
 const perTxt = t => halves() ? t.replace("du quart", "de la mi-temps").replace("le quart", "la mi-temps").replace("un même quart", "une même mi-temps") : t;
+const fmtSig = () => `${+S.rules.quarters}x${+S.rules.qlen}`;
 const rulesSig = () => { const r = {...S.rules}; delete r.alertSec; delete r.firstChange; delete r.minStint; return JSON.stringify(r); };
 let rulesQ = null, rulesMore = false, rulesResetArmed = false;
 const perOf = q => (S.rules.per || {})[q] || {};
@@ -997,8 +998,10 @@ function setPer(q, k, v){
 function setFormat(n){
   n = +n; if (n === +S.rules.quarters) return;
   const total = S.rules.quarters * S.rules.qlen;
-  S.rules.quarters = n; S.rules.qlen = Math.round(total / n * 2) / 2;
-  const per = {}; Object.entries(S.rules.per || {}).forEach(([q, o]) => { if (+q < n) per[q] = o; });
+  // Le banc maximum est « par période » : il suit la durée de la période (10' par quart = 20' par mi-temps).
+  const ratio = S.rules.quarters / n, half = v => Math.round(v * ratio * 2) / 2;
+  S.rules.quarters = n; S.rules.qlen = Math.round(total / n * 2) / 2; S.rules.maxBench = half(+S.rules.maxBench);
+  const per = {}; Object.entries(S.rules.per || {}).forEach(([q, o]) => { if (+q < n) per[q] = o.maxBench != null ? {...o, maxBench: half(+o.maxBench)} : o; });
   S.rules.per = per; rulesQ = null; rulesChanged();
 }
 const minTxt = v => R.fmtMin(+v);
