@@ -6,7 +6,7 @@ const PRESETS = {
   "4-4-2": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu gauche","mid",14,48,"MG"],["6","Milieu axial gauche","dm",38,54,"MAG"],["7","Milieu axial droit","dm",62,54,"MAD"],["8","Milieu droit","mid",86,48,"MD"],["9","Avant gauche","att",36,20,"AG"],["10","Avant droit","att",64,20,"AD"]],
   "3-3-3-1": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",22,62,"MDG"],["5","Milieu déf. axe","dm",50,64,"MDA"],["6","Milieu déf. droit","dm",78,62,"MDD"],["7","Milieu off. gauche","mid",22,40,"MOG"],["8","Milieu off. axe","mid",50,42,"MOA"],["9","Milieu off. droit","mid",78,40,"MOD"],["10","Avant centre","att",50,17,"AC"]]
 };
-const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:6,per:{0:{startBlock:6}},startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6};
+const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:6,per:{0:{startBlock:6}},startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6,maxDef:22,maxMid:22,maxAtt:22};
 // Règles copiées à neuf (per est un objet : jamais partagé avec DEFAULT_RULES).
 const defaultRules = () => JSON.parse(JSON.stringify(DEFAULT_RULES));
 // Quarts ou mi-temps : noms des périodes (q commence à 1).
@@ -123,12 +123,14 @@ const lineGroup = l => l === "def" ? "def" : l === "att" ? "att" : "mid";
 const TIME_MODES = [["notes","Selon mes choix"],["all","Égal pour tous"],["line","Égal par ligne"]];
 // En temps égal, les étoiles des joueurs de champ ne comptent pas (pas de joueur bloqué tout le match).
 const star = p => timeMode() === "notes" || !p.pos.some(q => q !== "G") ? +p.note : 0;
-function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); }
+function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); S.rules.maxStint = Math.max(+S.rules.maxDef, +S.rules.maxMid, +S.rules.maxAtt); }
+// Maximum d'affilée selon la ligne du 1er poste (le gardien garde le maximum général)
+function maxStintOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? +S.rules.maxDef : (l === "dm" || l === "mid") ? +S.rules.maxMid : l === "att" ? +S.rules.maxAtt : +S.rules.maxStint; }
 function generate(seed){
   syncMinStint();
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
-  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: (star(p) >= 5 && !p.minutes), oneBlock: star(p) >= 5, maxStint: p.maxStint ? +p.maxStint : 0, roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
+  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: (star(p) >= 5 && !p.minutes), oneBlock: star(p) >= 5, maxStint: p.maxStint ? +p.maxStint : maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -341,7 +343,7 @@ function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).m
 function replanBase(T){
   const positions = PRESETS[S.preset].map(x => ({id:x[0], gk:x[2]==="gk"}));
   const Tg = computeTargets();
-  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(star(x)>=5 && !x.minutes), oneBlock: star(x)>=5, maxStint: x.maxStint ? +x.maxStint : 0, roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(star(x)>=5 && !x.minutes), oneBlock: star(x)>=5, maxStint: x.maxStint ? +x.maxStint : maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
@@ -951,7 +953,7 @@ function squadTab(){
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
     <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
     <td><select data-i="${i}" data-k="note" aria-label="Note">${[2,2.5,3,3.5,4,4.5,5].map(n=>`<option ${+p.note===n?"selected":""}>${n}</option>`).join("")}</select></td>
-    <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="—" aria-label="Passage max"></td>
+    <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="${p.pos.length ? maxStintOf(p) : "—"}" aria-label="Passage max"></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
   return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
@@ -984,7 +986,7 @@ const PER_RULES = [
 const perTxt = t => halves() ? t.replace("du quart", "de la mi-temps").replace("le quart", "la mi-temps").replace("un même quart", "une même mi-temps") : t;
 const fmtSig = () => `${+S.rules.quarters}x${+S.rules.qlen}`;
 const rulesSig = () => { const r = {...S.rules}; delete r.alertSec; delete r.firstChange; delete r.minStint; return JSON.stringify(r); };
-let rulesQ = null, rulesMore = false, rulesResetArmed = false;
+let rulesQ = null, rulesResetArmed = false;
 const perOf = q => (S.rules.per || {})[q] || {};
 const perDiff = q => Object.keys(perOf(q)).filter(k => PER_RULES.some(([x]) => x === k) && !(q === 0 && k === "breakChanges") && perOf(q)[k] !== S.rules[k]);
 const matchStarted = () => !!S.plan && !S.plan.savedAt && (C.q > 1 || C.elapsed > 0);
@@ -1037,16 +1039,20 @@ function perEditor(q){
   const rows = PER_RULES.filter(([k]) => !(q === 0 && k === "breakChanges")).map(([k, type, label, unit]) => {
     const own = perOf(q)[k] !== undefined && perOf(q)[k] !== S.rules[k], v = R.rq(S.rules, q, k);
     const lab = k === "breakChanges" ? `Changements à la pause avant ${pThe(q+1).replace(/^l[ea] /, "")}` : perTxt(label).replace("le quart", pThe(q+1)).replace("la mi-temps", pThe(q+1));
-    const tag = own ? `<span class="pdiff">différent</span>` : `<span class="muted">comme le match</span>`;
+    const tag = own ? `<span class="pdiff">différent</span>` : `<span class="muted">comme ${baseName().toLowerCase()}</span>`;
     if (type === "bool") return `<div class="set${own ? " own" : ""}"><div><b>${esc(lab)}</b><div>${tag}</div></div><div class="seg" role="group">${[[true,"Oui"],[false,"Non"]].map(([b,l]) => `<button data-pb="${q}:${k}:${b}" aria-pressed="${!!v === b}">${l}</button>`).join("")}</div></div>`;
     return `<div class="set${own ? " own" : ""}"><div><b>${esc(lab)}</b><div>${tag}</div></div><span class="rnum"><input class="set-num" type="number" inputmode="decimal" step="${unit === "max" ? 1 : 0.5}" min="0" data-pr="${q}:${k}" value="${esc(own ? v : "")}" placeholder="${esc(S.rules[k])}" aria-label="${esc(lab)}">${unit === "min" ? "<small>min</small>" : ""}</span></div>`;
   }).join("");
-  return `<div class="per-ed"><div class="per-h"><b>Règles ${halves() ? "de " : "du "}${pThe(q+1).replace(/^l[ea] /, "")}</b>${perDiff(q).length ? `<button class="btn small" id="perClear">Comme le reste du match</button>` : ""}</div>
-    <p class="muted" style="margin:0 0 4px;font-size:.88rem">Case vide = même règle que le reste du match.</p>${rows}</div>`;
+  return `<div class="per-ed"><div class="per-h"><b>Règles ${halves() ? "de " : "du "}${pThe(q+1).replace(/^l[ea] /, "")}</b>${perDiff(q).length ? `<button class="btn small" id="perClear">Revenir ${halves() ? "à la mi-temps" : "au quart"} de base</button>` : ""}</div>
+    <p class="muted" style="margin:0 0 4px;font-size:.88rem">Change seulement ce qui est différent. Case vide = même règle que ${baseName().toLowerCase()}.</p>${rows}</div>`;
 }
+const baseName = () => halves() ? "La mi-temps de base" : "Le quart de base";
 function rulesBody(){
-  const r = S.rules, lock = matchStarted(), W = pWord();
-  const chips = Array.from({length:r.quarters}, (_, q) => { const n = perDiff(q).length; return `<button class="pchip-q${n ? " diff" : ""}" data-perq="${q}" aria-pressed="${rulesQ === q}">${pShort(q+1)}<small>${n ? n + (n > 1 ? " différences" : " différence") : "normal"}</small></button>`; }).join("");
+  const r = S.rules, lock = matchStarted();
+  const tabs = `<button class="pchip-q base" data-perq="base" aria-pressed="${rulesQ === null}">${halves() ? "Mi-temps" : "Quart"}<small>de base</small></button>` + Array.from({length:r.quarters}, (_, q) => { const n = perDiff(q).length; return `<button class="pchip-q${n ? " diff" : ""}" data-perq="${q}" aria-pressed="${rulesQ === q}">${pShort(q+1)}<small>${n ? n + (n > 1 ? " différences" : " différence") : "comme la base"}</small></button>`; }).join("");
+  const base = `<div class="per-ed"><div class="per-h"><b>${baseName()}</b></div>
+    <p class="muted" style="margin:0 0 4px;font-size:.88rem">Ces règles valent pour ${halves() ? "les 2 mi-temps" : "les 4 quarts"}. Touche ${halves() ? "MT1 ou MT2" : "Q1 à Q4"} pour en changer une seule.</p>
+    ${PER_RULES.map(([k]) => matchRule(k)).join("")}</div>`;
   return `${rulesTimeline()}
   <div class="grp-t">Format du match</div>
   <div class="card grp">
@@ -1054,28 +1060,22 @@ function rulesBody(){
     <div class="set"><div><b>Le match se joue en</b></div><div class="seg" role="group">${[[4,"4 quarts"],[2,"2 mi-temps"]].map(([n,l]) => `<button data-fmt="${n}" aria-pressed="${+r.quarters === n}" ${lock ? "disabled" : ""}>${l}</button>`).join("")}</div></div>
     <div class="set"><div><b>Durée d'${halves() ? "une mi-temps" : "un quart"}</b><div class="muted">Match de ${minTxt(r.quarters * r.qlen)} en tout.</div></div><span class="rnum"><input class="set-num" type="number" inputmode="decimal" step="0.5" min="5" data-rule="qlen" value="${esc(r.qlen)}" aria-label="Durée" ${lock ? "disabled" : ""}><small>min</small></span></div>
   </div>
-  <div class="grp-t">${halves() ? "Mi-temps différentes" : "Quarts différents"}</div>
+  <div class="grp-t">Règles ${halves() ? "par mi-temps" : "par quart"}</div>
   <div class="card grp" style="padding-block:12px">
-    <p class="muted" style="margin:0 0 10px;font-size:.88rem">Touche ${halves() ? "une mi-temps" : "un quart"} pour lui donner ses propres règles (ex. pas de changement avant 6' au début du match).</p>
-    <div class="perq" style="grid-template-columns:repeat(${r.quarters},1fr)">${chips}</div>
-    ${rulesQ !== null && rulesQ < r.quarters ? perEditor(rulesQ) : ""}
+    <div class="perq" style="grid-template-columns:1.3fr repeat(${r.quarters},1fr)">${tabs}</div>
+    ${rulesQ !== null && rulesQ < r.quarters ? perEditor(rulesQ) : base}
   </div>
-  <div class="grp-t">Quand on peut changer</div>
-  <div class="card grp">${matchRule("startBlock")}${matchRule("endBlock")}${rulesMore ? matchRule("breakChanges") + matchRule("gkOnlyAtBreaks") : ""}</div>
-  <div class="grp-t">Sur le terrain</div>
-  <div class="card grp">
+  <div class="grp-t">Pour tout le match</div>
+  <div class="card grp rules-all">
     <div class="set"><div><b>Minimum avant de sortir</b><div class="muted">Un joueur reste au moins ce temps sur le terrain, selon sa ligne (son 1er poste).</div></div>
       <div class="rline">${[["minDef","Défense"],["minMid","Milieu"],["minAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Minimum avant de sortir, ${l.toLowerCase()}"></label>`).join("")}</div></div>
-    ${ruleRow("maxStint", "Maximum d'affilée", "min", "Jamais plus longtemps sur le terrain sans sortir. Tu peux le changer pour un joueur dans Effectif.", r.maxStint, 'data-rule="maxStint"')}
+    <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. Tu peux le changer pour un joueur dans Effectif.</div></div>
+      <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
+    ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
+    ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
   </div>
-  <div class="grp-t">Sur le banc</div>
-  <div class="card grp">${matchRule("maxBench")}${rulesMore ? ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"') : ""}</div>
-  <div class="grp-t">Les changements</div>
-  <div class="card grp">${matchRule("maxEntries")}</div>
-  <div class="grp-t">Temps de jeu</div>
-  <div class="card grp">${ruleRow("minPlay", "Minimum sur le match", "min", "Le plan évite qu'un joueur joue moins que ça, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}</div>
-  <div class="row" style="margin-top:12px;justify-content:space-between">
-    <button class="btn small" id="rulesMore">${rulesMore ? "Moins de règles" : "Plus de règles (3)"}</button>
+  <p class="muted" style="margin:10px 4px 0;font-size:.85rem">Ces règles-là valent sur tout le match : un passage peut commencer dans un ${pWord()} et finir dans le suivant.</p>
+  <div class="row" style="margin-top:12px;justify-content:flex-end">
     <button class="btn small${rulesResetArmed ? " danger" : ""}" id="rulesReset">${rulesResetArmed ? "Sûr ? Toucher encore" : "Remettre les règles de base"}</button>
   </div>`;
 }
@@ -1083,11 +1083,10 @@ function bindRules(v){
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { const k = el.dataset.rule; if (el.value === "" || isNaN(+el.value) || +el.value < 0) { render(); return; } S.rules[k] = k === "qlen" ? Math.max(5, +el.value) : +el.value; rulesChanged(); }));
   v.querySelectorAll("[data-rb]").forEach(b => b.addEventListener("click", () => { S.rules[b.dataset.rb] = b.dataset.v === "true"; rulesChanged(); }));
   v.querySelectorAll("[data-fmt]").forEach(b => b.addEventListener("click", () => { if (!matchStarted()) setFormat(b.dataset.fmt); }));
-  v.querySelectorAll("[data-perq]").forEach(b => b.addEventListener("click", () => { const q = +b.dataset.perq; rulesQ = rulesQ === q ? null : q; render(); }));
+  v.querySelectorAll("[data-perq]").forEach(b => b.addEventListener("click", () => { rulesQ = b.dataset.perq === "base" ? null : +b.dataset.perq; render(); }));
   v.querySelectorAll("[data-pr]").forEach(el => el.addEventListener("change", () => { const [q, k] = el.dataset.pr.split(":"); setPer(+q, k, el.value === "" || isNaN(+el.value) ? null : Math.max(0, +el.value)); }));
   v.querySelectorAll("[data-pb]").forEach(b => b.addEventListener("click", () => { const [q, k, val] = b.dataset.pb.split(":"); setPer(+q, k, val === "true"); }));
   $("#perClear")?.addEventListener("click", () => { const per = {...(S.rules.per || {})}; delete per[rulesQ]; S.rules.per = per; rulesChanged(); });
-  $("#rulesMore")?.addEventListener("click", () => { rulesMore = !rulesMore; render(); });
   $("#rulesReset")?.addEventListener("click", () => {
     if (!rulesResetArmed) { rulesResetArmed = true; render(); return; }
     const keep = {quarters:S.rules.quarters, qlen:S.rules.qlen, alertSec:S.rules.alertSec};
