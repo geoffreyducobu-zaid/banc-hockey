@@ -58,7 +58,7 @@ function applyColor(){
 }
 const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
 let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
-let season = null, seasonMsg = "";
+let season = null, seasonMsg = "", pdfMsg = "";
 let saveState = "";
 let C = loadClock();
 
@@ -320,7 +320,9 @@ function bindMatches(){
   document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { removeMatch(this.dataset.mdel); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ?"; } }));
 }
 // Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
-function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
+// Un match déjà fini et enregistré repart aussi de zéro : il sort de la saison et sera réenregistré à la fin.
+function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null;
+  if (S.plan?.savedAt) { const at = S.plan.savedAt; delete S.plan.savedAt; unsaveSeason(at); } S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
 function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Array.from({length:n}, () => [200,100]).flat()); } catch(e){} } if (!actx || !prefs.sound) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
@@ -418,8 +420,8 @@ function swapPanel(seg){
   </div>`;
 }
 function incidentPanel(seg){
-  if (inc && inc.type === "libre") return swapPanel(seg);
   if (!inc) return "";
+  if (inc.type === "libre" && !inc.pending) return swapPanel(seg);
   const onField = Object.keys(seg.on);
   const card = timedCard(inc.type);
   if (inc.pending) return `<div class="card incp"><h2>À vérifier</h2>
@@ -469,7 +471,7 @@ function bindSheet(){
 function loadJsPdf(){ return new Promise((ok, ko) => { if (window.jspdf) return ok(); const s = document.createElement("script"); s.src = "vendor/jspdf.umd.min.js"; s.onload = ok; s.onerror = ko; document.head.appendChild(s); }); }
 async function makePdf(){
   const btn = $("#pdfB"); if (btn) { btn.disabled = true; btn.textContent = "Préparation…"; }
-  const done = msg => { if (btn) { btn.disabled = false; btn.textContent = "📄 Plan B (PDF)"; } const m = $("#pinMsg"); seasonMsg = msg; render(); };
+  const done = msg => { if (btn) { btn.disabled = false; btn.textContent = "📄 Plan B (PDF)"; } pdfMsg = msg; render(); };
   try {
     await loadJsPdf();
     const { jsPDF } = window.jspdf; const doc = new jsPDF({unit:"mm", format:"a4"});
@@ -535,14 +537,19 @@ async function loadSeason(){
 }
 async function saveMatch(){
   const sh = sheet();
-  const rec = {date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => e.type!=="bless" && e.type!=="libre").map(e => ({type:e.type, player:e.player}))};
+  const rec = {match: S.curMatch || null, date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => e.type!=="bless" && e.type!=="libre").map(e => ({type:e.type, player:e.player}))};
   for (const [n,m] of Object.entries(S.plan.played)) rec.minutes[n] = Math.round(m*10)/10;
   for (const [n,m] of Object.entries(S.plan.targets||{})) rec.targets[n] = Math.round(m*10)/10;
   try {
-    const L = JSON.parse(localStorage.getItem("banc-season") || "[]"); L.push({id:String(Date.now()), ...rec}); localStorage.setItem("banc-season", JSON.stringify(L));
-    S.plan.savedAt = Date.now(); persist(); seasonMsg = "Match enregistré dans la saison ✓";
+    const at = Date.now(), L = JSON.parse(localStorage.getItem("banc-season") || "[]"); L.push({id:String(at), savedAt:at, ...rec}); localStorage.setItem("banc-season", JSON.stringify(L));
+    S.plan.savedAt = at; persist(); seasonMsg = "Match enregistré dans la saison ✓";
   } catch(e){ seasonMsg = "L'enregistrement a échoué, réessaie."; }
   season = null; render();
+}
+// Retire de la saison le match enregistré à l'instant « at » (même match, même enregistrement).
+function unsaveSeason(at){
+  try { const L = JSON.parse(localStorage.getItem("banc-season") || "[]"), K = L.filter(x => !(x.savedAt === at || Math.abs(+x.id - at) < 5000)); if (K.length !== L.length) localStorage.setItem("banc-season", JSON.stringify(K)); } catch(e){}
+  season = null; seasonMsg = "";
 }
 async function deleteMatch(id){
   try {
@@ -664,7 +671,7 @@ function matchView(){
   const qEndT = C.q*ql;
   let alertHtml;
   const matchOver = atEnd && C.q >= S.rules.quarters;
-  if (!next) alertHtml = `<div class="alert calm"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
+  if (!next) alertHtml = `<div class="alert calm"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver && !plan.savedAt ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
   else {
     const isBreakChange = Math.abs(next.t - qEndT) < 1e-6 && C.q < S.rules.quarters;
     const secs = (next.t - t) * 60;
@@ -972,7 +979,7 @@ function bindSettings(){
 function pinView(title = "Page coach", text = "Entre ton code de verrouillage pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p>${pinField("pinIn", "Code de verrouillage")}<div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
 function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
-let coachTab = "match", coachStep = null;
+let coachTab = "match", coachStep = null, squadMsg = "";
 const TIME_HELP = {notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."};
 // Une étape de la préparation du match : une ligne avec son état, qui s'ouvre au toucher.
 function step(id, n, done, title, summary, body){
@@ -987,15 +994,16 @@ function coachView(){
 function squadTab(){
   const rows = S.squad.map((p,i) => `<tr>
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
-    <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
     <td><select data-i="${i}" data-k="note" aria-label="Note">${[2,2.5,3,3.5,4,4.5,5].map(n=>`<option ${+p.note===n?"selected":""}>${n}</option>`).join("")}</select></td>
+    <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
     <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="${p.pos.length ? maxStintOf(p) : "—"}" aria-label="Passage max"></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
   return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes joueurs (${S.squad.length})</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Corners : D donneur, B bloqueur.</p>
-    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes</th><th>Note</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${squadMsg ? `<div class="warn" style="margin-bottom:10px">${esc(squadMsg)}</div>` : ""}
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Note</th><th>Postes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
   </div>`;
 }
@@ -1155,7 +1163,9 @@ function matchPrepTab(){
       rulesBody())}
   </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Plan de rotation</h2>${S.plan ? `<button class="btn small" id="pdfB">📄 Plan B (PDF)</button>` : ""}</div>
+    ${pdfMsg && S.plan ? `<div class="muted" style="margin-top:6px;font-size:.9rem">${esc(pdfMsg)}</div>` : ""}
     ${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
+    ${S.plan && !preview && !S.plan.savedAt && Object.keys(S.plan.played || {}).some(n => !S.squad.some(p => p.name === n)) ? `<div class="warn" style="margin-top:10px">Un joueur du plan a été renommé ou supprimé. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     ${S.plan && !preview && S.plan.rulesSig && S.plan.rulesSig !== rulesSig() && !matchStarted() ? `<div class="warn" style="margin-top:10px">Les règles ont changé depuis ce plan. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     <div class="row" style="margin-top:10px"><button class="btn primary${preview ? "" : " big"}" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go big" id="use">Utiliser pour le match</button>` : ""}</div>
     <div id="genOut" style="margin-top:12px">${previewHtml()}</div>
@@ -1180,6 +1190,14 @@ function bindCoach(){
   bindTeams();
   v.querySelectorAll("[data-i]").forEach(el => el.addEventListener("change", () => {
     const p = S.squad[+el.dataset.i], k = el.dataset.k;
+    if (k === "name") {
+      const nn = el.value.trim(), old = p.name;
+      // Le plan et la compo retrouvent les joueurs par leur nom : il doit être unique.
+      if (!nn || S.squad.some(x => x !== p && x.name.trim().toLowerCase() === nn.toLowerCase())) { squadMsg = nn ? `Il y a déjà un joueur « ${nn} ». Ajoute l'initiale du nom, ex. « ${nn} D. ».` : "Le nom ne peut pas être vide."; render(); return; }
+      squadMsg = ""; p.name = nn;
+      for (const q in S.lineup) if (S.lineup[q] === old) S.lineup[q] = nn;
+      preview = null; persist(); render(); return;
+    }
     if (k === "present") p.present = el.checked;
     else if (k === "pos") p.pos = el.value.split(/[ ,;/]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
     else if (k === "note") p.note = +el.value;
@@ -1191,7 +1209,7 @@ function bindCoach(){
   v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; p.pos = p.pos.filter(q => q !== b.dataset.q); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
-  $("#addP")?.addEventListener("click", () => { S.squad.push({name:"Nouveau joueur",pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
+  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
   $("#preset")?.addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
   v.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => { coachTab = b.dataset.ctab; render(); }));
