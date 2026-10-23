@@ -213,7 +213,7 @@ function openTeam(id){
   const cur = curTeamRec();
   S.teams = S.teams.map(t => t.id === cur.id ? cur : t.id === id ? {id, teamName:r.teamName || ""} : t);
   S.curTeam = id; S.teamName = r.teamName || ""; S.squad = r.squad || [];
-  S.rules = {...DEFAULT_RULES, ...(r.rules || {})};
+  S.rules = {...defaultRules(), ...R.migrateRules(r.rules)};
   S.matches = r.matches || []; S.curMatch = r.curMatch || null;
   try { localStorage.setItem("banc-season", JSON.stringify(r.season || [])); } catch(e){}
   season = null; preview = null; inc = null;
@@ -227,7 +227,7 @@ function openTeam(id){
 }
 function createTeam(name){
   const id = newId();
-  S.teams.push({id, teamName:name, squad:[], rules:{...S.rules}, matches:[], curMatch:null, season:[]});
+  S.teams.push({id, teamName:name, squad:[], rules:JSON.parse(JSON.stringify(S.rules)), matches:[], curMatch:null, season:[]});
   openTeam(id);
 }
 function removeTeam(id){
