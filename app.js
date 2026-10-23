@@ -76,9 +76,11 @@ function pushClock(){ saveClock(); liveSendClock(); }
 function persist(){ if (ADJ) return; saveLocal(); markChanged(); liveChanged(); }
 function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "StickMate"; }
 const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "equipe";
-function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = teamTitle(); document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
- const el = $("#sub"); if (el && ADJ) { el.innerHTML = `Adjoint<br>` + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(adjointSub())}</span>`; return; }
- if (el) el.innerHTML = (S.profile?.first ? `Coach ${esc(S.profile.first)}<br>` : "") + (matchTitle() ? `<b style="font-weight:600">${esc(matchTitle())}</b><br>` : "") + `<span style="opacity:.7">${esc(saveState)}</span>`; paintSave(); }
+// Barre du haut sur une ligne : l'équipe à gauche ; à droite le match ouvert (page Match, adjoint) ou l'état de la sauvegarde.
+function paintSub(){ const bn = $("#brandName"); if (bn) bn.textContent = S.teamName || S.profile?.club || "StickMate"; document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
+ const el = $("#sub"); if (!el) return;
+ if (ADJ) { el.innerHTML = `${matchTitle() ? `<b>${esc(S.matchLabel || matchTitle())}</b>` : "Adjoint"}<span>${esc(adjointSub())}</span>`; return; }
+ el.innerHTML = mode === "match" && S.matchLabel ? `<b>${esc(S.matchLabel)}</b><span>${esc(fmtDate(S.matchDate))}</span>` : `<span>${esc(saveState)}</span>`; paintSave(); }
 function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveState; }
 
 /* ---------- plan helpers ---------- */
@@ -168,6 +170,7 @@ const MATCH_KEYS = ["matchLabel","matchDate","preset","timeMode","lineup","plan"
 const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 let matchesOpen = false, newMatchForm = false;
+let toolsOpen = false, matchTab = "chg";
 function curMatchRec(){
   const r = {id:S.curMatch}; MATCH_KEYS.forEach(k => r[k] = S[k] ?? null);
   r.present = S.squad.filter(p => p.present).map(p => p.name);
@@ -214,9 +217,6 @@ function sortedMatches(){
   return L.sort((a,b) => (a.matchDate || "9999").localeCompare(b.matchDate || "9999"));
 }
 const fmtDate = d => { if (!d) return "Sans date"; try { return new Date(d + "T12:00:00").toLocaleDateString("fr-BE", {weekday:"short", day:"numeric", month:"short"}); } catch(e){ return d; } };
-function matchBar(){
-  return `<div class="card mbar"><div style="min-width:0"><div class="muted" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.06em">Match ouvert</div><b>${esc(S.matchLabel || "Match sans nom")}</b> <span class="muted">· ${esc(fmtDate(S.matchDate))}</span></div><button class="btn small" id="mList">Mes matchs (${S.matches.length})</button></div>`;
-}
 function matchesView(){
   const rows = sortedMatches().map(r => `<div class="mrow${r.id === S.curMatch ? " cur" : ""}">
       <button class="mopen" data-mopen="${esc(r.id)}"><b>${esc(r.matchLabel || "Match sans nom")}</b><span class="muted">${esc(fmtDate(r.matchDate))} · ${esc(matchStatus(r))}</span></button>
@@ -236,7 +236,7 @@ function matchesView(){
 let nmHome = true;
 function segBtnsLocal(){ return `<div class="seg" role="group"><button data-nmhome="1" aria-pressed="${nmHome}">Domicile</button><button data-nmhome="0" aria-pressed="${!nmHome}">Extérieur</button></div>`; }
 function bindMatches(){
-  $("#mList")?.addEventListener("click", () => { matchesOpen = true; render(); });
+  $("#mList")?.addEventListener("click", () => { matchesOpen = true; toolsOpen = false; render(); window.scrollTo(0, 0); });
   $("#mClose")?.addEventListener("click", () => { matchesOpen = false; newMatchForm = false; render(); });
   $("#nmOpen")?.addEventListener("click", () => { newMatchForm = true; render(); $("#nmOpp")?.focus(); });
   $("#nmCancel")?.addEventListener("click", () => { newMatchForm = false; render(); });
@@ -375,7 +375,7 @@ function sheet(){ S.sheet ||= {us:[], them:[], pc:0, log:[]}; return S.sheet; }
 let scorerPick = false;
 function sheetCard(seg){
   const sh = sheet();
-  return `<div class="card sheet"><div class="sheet-row">
+  return `<div class="sheet"><div class="sheet-row">
       <div class="score"><span>${sh.us.length}</span><small>nous</small></div><div class="dash">–</div><div class="score"><span>${sh.them.length}</span><small>eux</small></div>
       <div class="sheet-btns"><button class="btn small" id="gUs">+ But nous</button><button class="btn small" id="gThem">+ But eux</button><button class="btn small" id="pcPlus">+ Corner (${sh.pc})</button>${sh.log.length ? `<button class="btn small" id="shUndo" aria-label="Annuler la dernière saisie">↶</button>` : ""}</div>
     </div>
@@ -491,7 +491,7 @@ function seasonHtml(){
 }
 
 /* ---------- rendering ---------- */
-const VIEWS = {home:[homeView, bindHome], match:[() => matchesOpen ? matchesView() : (far ? "" : matchBar()) + matchView(), () => { bindMatches(); if (!matchesOpen) bindMatch(); }], coach:[coachView, bindCoach], settings:[settingsView, bindSettings]};
+const VIEWS = {home:[homeView, bindHome], match:[() => matchesOpen ? matchesView() : matchView(), () => { bindMatches(); if (!matchesOpen) bindMatch(); }], coach:[coachView, bindCoach], settings:[settingsView, bindSettings]};
 function render(){
   applyColor();
   paintSub();
@@ -591,46 +591,52 @@ function matchView(){
       ${alertHtml}
       <div class="row">${startBtn}<button class="btn" id="farOff">Vue normale</button><span class="muted" style="font-size:.85rem">Clavier : espace = démarrer/pause · ← → = 10 s</span></div>
     </div>`;
+  // Bas de page : un seul bloc à la fois (changements du quart, terrain ou score).
+  const tabs = [["chg","Changements"],["field","Terrain"]].concat(ADJ ? [] : [["score","Score"]]);
+  if (!tabs.some(([k]) => k === matchTab)) matchTab = "chg";
+  const tabBody = matchTab === "field" ? `${pitch}<div style="margin-top:12px"><div class="muted" style="font-size:.85rem;margin-bottom:6px">Sur le banc</div><div class="bench">${benchNames.map(n=>`<span>${esc(n)}</span>`).join("") || '<span>Personne</span>'}</div></div>`
+    : matchTab === "score" ? sheetCard(seg) : `<div class="muted" style="font-size:.85rem;margin-bottom:4px">Quart ${C.q}</div><div class="up">${upList}</div>`;
   return `<div class="match">
-    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+    <div class="mcol">
       ${shareCard()}
       ${ADJ && !inc && incMsg ? `<div class="warn">${esc(incMsg)}</div>` : ""}
       ${banners}
-      ${incidentPanel(seg)}
       <div class="card clock">
         <div class="score-head">
-        <div class="clock-top"><span class="sh-title">${esc(matchTitle() || "Match")}</span><span class="qbadge">Q${C.q}</span></div>
-        <div class="sh-row"><div class="time${C.running?"":" paused"}" id="time">${fmtClock(el)}</div>${S.sheet && (sheet().us.length || sheet().them.length) ? `<span class="sh-score" aria-label="Score">${sheet().us.length}–${sheet().them.length}</span>` : ""}</div>
-        <span class="remain" id="remain">Reste ${fmtClock(ql*60-el)}</span>
-        <div class="prog"><i id="progBar" style="width:${(el/(ql*60)*100).toFixed(2)}%"></i>${visChanges(plan).filter(c=>fmtQ(c.t).q===C.q && Math.abs(c.t-(C.q-1)*ql)>1e-6).map(c=>`<b style="left:${((c.t-(C.q-1)*ql)/ql*100).toFixed(2)}%"></b>`).join("")}</div>
+          <div class="clock-top"><span class="qbadge">Q${C.q}</span><span class="remain" id="remain">Reste ${fmtClock(ql*60-el)}</span>${liveBadge()}<button class="tools-btn" id="toolsBtn" aria-expanded="${toolsOpen}">Outils ⋯</button></div>
+          <div class="sh-row"><div class="time${C.running?"":" paused"}" id="time">${fmtClock(el)}</div>${S.sheet && (sheet().us.length || sheet().them.length) ? `<span class="sh-score" aria-label="Score">${sheet().us.length}–${sheet().them.length}</span>` : ""}</div>
+          <div class="prog"><i id="progBar" style="width:${(el/(ql*60)*100).toFixed(2)}%"></i>${visChanges(plan).filter(c=>fmtQ(c.t).q===C.q && Math.abs(c.t-(C.q-1)*ql)>1e-6).map(c=>`<b style="left:${((c.t-(C.q-1)*ql)/ql*100).toFixed(2)}%"></b>`).join("")}</div>
+          <div class="sh-ctrl"><button class="btn" id="m10" aria-label="Reculer de 10 secondes">−10 s</button>${startBtn}<button class="btn" id="p10" aria-label="Avancer de 10 secondes">+10 s</button></div>
         </div>
-        <div class="row">
-          ${startBtn}
-          <button class="btn" id="m10">−10 s</button><button class="btn" id="p10">+10 s</button>
-        </div>
+        ${toolsOpen ? `<div class="tools">
+          <div class="tools-grid">
+            <button class="btn" id="farOn">⤢ Vue de loin</button>
+            ${ADJ ? "" : `<button class="btn" id="mList">📋 Mes matchs</button>`}
+            ${liveButton()}
+          </div>
+          <div class="muted tools-t">Régler le chrono</div>
+          <div class="nav" aria-label="Navigation dans le match">
+            <button class="btn" id="m60">−1 min</button><button class="btn" id="p60">+1 min</button>
+            <button class="btn" id="qReset">↺ Quart à 0</button>
+            <button class="btn" id="qPrev" ${C.q<=1?"disabled":""}>◂ Quart préc.</button>
+            <button class="btn" id="qNext" ${C.q>=S.rules.quarters?"disabled":""}>Quart suiv. ▸</button>
+            <button class="btn" id="reset">Match à 0</button>
+          </div>
+        </div>` : ""}
       </div>
       ${alertHtml}
-      <div class="card clock">
-        <div class="row">
-          <button class="btn warnb" id="incOpen">⚠ Imprévu</button>
-          <button class="btn small" id="swapOpen">↔ Changement</button>
-          ${S.prevPlan || (ADJ && S.hasPrev) ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
-          <button class="btn" id="farOn">⤢ Vue de loin</button>
-          ${liveButton()}
-        </div>
-        <div class="nav" aria-label="Navigation dans le match">
-          <button class="btn" id="m60">−1 min</button><button class="btn" id="p60">+1 min</button>
-          <button class="btn" id="qReset">↺ Quart à 0</button>
-          <button class="btn" id="qPrev" ${C.q<=1?"disabled":""}>◂ Quart préc.</button>
-          <button class="btn" id="qNext" ${C.q>=S.rules.quarters?"disabled":""}>Quart suiv. ▸</button>
-          <button class="btn" id="reset">Match à 0</button>
-        </div>
+      <div class="actions">
+        <button class="btn warnb big" id="incOpen">⚠ Imprévu</button>
+        <button class="btn big" id="swapOpen">↔ Hors plan</button>
       </div>
-      ${ADJ ? "" : sheetCard(seg)}
+      ${S.prevPlan || (ADJ && S.hasPrev) ? `<button class="btn" id="incUndo">↶ Annuler le dernier imprévu</button>` : ""}
+      ${incidentPanel(seg)}
     </div>
-    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
-      <div class="card"><h2>Sur le terrain</h2>${pitch}<div style="margin-top:12px"><div class="muted" style="font-size:.85rem;margin-bottom:6px">Sur le banc</div><div class="bench">${benchNames.map(n=>`<span>${esc(n)}</span>`).join("") || '<span>Personne</span>'}</div></div></div>
-      <div class="card"><h2>Changements du Q${C.q}</h2><div class="up">${upList}</div></div>
+    <div class="mcol">
+      <div class="card">
+        <div class="seg seg-full" role="tablist">${tabs.map(([k,l]) => `<button role="tab" data-mtab="${k}" aria-selected="${matchTab===k}" aria-pressed="${matchTab===k}">${l}</button>`).join("")}</div>
+        <div style="margin-top:12px">${tabBody}</div>
+      </div>
     </div></div>`;
 }
 function pitchLines(){ return `<div class="l" style="inset:3% 4%;border-radius:4px"></div><div class="l" style="left:4%;right:4%;top:50%;height:0;border-width:2px 0 0"></div><div class="l" style="left:28%;right:28%;top:3%;height:15%;border-radius:0 0 50% 50%/0 0 100% 100%;border-top:0"></div><div class="l" style="left:28%;right:28%;bottom:3%;height:15%;border-radius:50% 50% 0 0/100% 100% 0 0;border-bottom:0"></div>`; }
@@ -651,7 +657,9 @@ function bindMatch(){
   $("#qReset")?.addEventListener("click", () => setClock(C.q, 0));
   $("#qPrev")?.addEventListener("click", () => setClock(C.q - 1, 0));
   $("#qNext")?.addEventListener("click", () => setClock(C.q + 1, 0));
-  $("#farOn")?.addEventListener("click", () => setFar(true));
+  $("#farOn")?.addEventListener("click", () => { toolsOpen = false; setFar(true); });
+  $("#toolsBtn")?.addEventListener("click", () => { toolsOpen = !toolsOpen; render(); });
+  document.querySelectorAll("[data-mtab]").forEach(b => b.addEventListener("click", () => { matchTab = b.dataset.mtab; render(); }));
   $("#farOff")?.addEventListener("click", () => setFar(false));
   $("#saveMatch")?.addEventListener("click", saveMatch);
   $("#incOpen")?.addEventListener("click", () => { inc = {type:null, player:null, catchUp:false}; incMsg = ""; render(); });
@@ -758,7 +766,7 @@ function homeView(){
   return `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
   <div class="tiles"><div class="tile"><b>${present().length}</b><span>présents</span></div><div class="tile"><b>${ready ? visChanges(S.plan).length : "–"}</b><span>changements</span></div><div class="tile"><b>${esc(S.preset)}</b><span>système</span></div></div>
   ${ready ? `<button class="btn dark big" id="hMatch">Ouvrir le match →</button>` : `<button class="btn primary big" id="hCoach">Préparer le match →</button>`}
-  ${accountNudge()}${howTo()}`;
+  ${accountNudge()}${S.plan ? "" : howTo()}`;
 }
 function howTo(){
   return `<div class="card"><h2>Comment ça marche</h2>
@@ -781,48 +789,48 @@ function bindHome(){
 function segBtns(key, opts){ return `<div class="seg" role="group">${opts.map(([v,l]) => `<button data-pref="${key}" data-val="${v}" aria-pressed="${String(prefs[key]) === String(v)}">${esc(l)}</button>`).join("")}</div>`; }
 function colorSetting(){
   const cur = hexOk(S.color) ? S.color.toLowerCase() : DEFAULT_COLOR, known = CLUB_COLORS.some(([h]) => h === cur);
-  return `<div class="set" style="display:block"><b>Couleur principale</b><div class="muted">La couleur de ton club. Elle colore la barre du haut et les boutons. Le texte reste toujours lisible : l'app choisit blanc ou noir toute seule.</div>
+  return `<div><div class="muted">La couleur de ton club. Elle colore la barre du haut, le chrono et les boutons. Le texte reste toujours lisible : l'app choisit blanc ou noir toute seule.</div>
     <div class="swatches" role="group" aria-label="Couleur principale">${CLUB_COLORS.map(([h,l]) => `<button class="sw" data-color="${h}" style="background:${h}" aria-pressed="${h === cur}" aria-label="${esc(l)}" title="${esc(l)}"></button>`).join("")}
       <label class="sw other" title="Autre couleur" aria-label="Autre couleur" data-on="${!known}" style="${known ? "" : `background:${cur}`}"><input type="color" id="colorPick" value="${cur}"></label></div>
     <div class="clubprev"><button class="btn primary" type="button" tabindex="-1">Aperçu bouton</button>${cur !== DEFAULT_COLOR ? `<button class="btn small" id="colorReset">Remettre le bleu StickMate</button>` : ""}</div></div>`;
 }
 function setColor(h){ if (!hexOk(h)) return; S.color = h.toLowerCase(); persist(); render(); }
+let setOpen = null;
+// Une ligne de réglage qui s'ouvre au toucher pour montrer son détail.
+function setRow(id, label, value, body){
+  const open = setOpen === id;
+  return `<button class="set-x" data-xp="${id}" aria-expanded="${open}"><span>${esc(label)}</span><span class="set-v">${value}<span aria-hidden="true">${open ? "⌃" : "›"}</span></span></button>${open ? `<div class="xp">${body}</div>` : ""}`;
+}
 function settingsView(){
   const locked = S.pin && !coachOK;
-  const rulesHtml = RULE_LABELS.map(([k,l,st]) => `<label>${esc(l)}<input type="number" step="${st}" data-rule="${k}" value="${S.rules[k]}"></label>`).join("");
-  return `<div class="card"><h2>L'app</h2>
-    <div class="set"><div><b>Son des alertes</b><div class="muted">Bip avant chaque changement. Sur iPhone, le bouton silencieux coupe le son.</div></div>
+  const cur = hexOk(S.color) ? S.color.toLowerCase() : DEFAULT_COLOR;
+  const themeName = {auto:"Auto", light:"Clair", dark:"Sombre"}[prefs.theme] || "Auto";
+  return `<div class="grp-t">Pendant le match</div>
+  <div class="card grp">
+    <div class="set"><div><b>Son des alertes</b><div class="muted">Sur iPhone, le bouton silencieux coupe le son.</div></div>
       <div class="row" style="flex-shrink:0">${segBtns("sound", [[true,"Oui"],[false,"Non"]])}<button class="btn small" id="testSound">Tester</button></div></div>
     <div class="set"><div><b>Vibreur</b><div class="muted">${canVibrate ? "Le téléphone vibre avant chaque changement." : "Pas disponible sur iPhone : Apple ne laisse pas les apps web faire vibrer le téléphone."}</div></div>
       ${canVibrate ? segBtns("vibrate", [[true,"Oui"],[false,"Non"]]) : ""}</div>
-    ${colorSetting()}
-    <div class="set"><div><b>Thème</b><div class="muted">Auto suit le réglage du téléphone.</div></div>
-      ${segBtns("theme", [["auto","Auto"],["light","Clair"],["dark","Sombre"]])}</div>
+    <div class="set"><div><b>Alerte avant un changement</b><div class="muted">En secondes.</div></div><input class="set-num" type="number" step="5" min="5" data-rule="alertSec" value="${S.rules.alertSec}" aria-label="Alerte avant un changement, en secondes"></div>
   </div>
-  ${locked ? pinView("Réglages coach", "Entre ton code de verrouillage pour modifier ton profil, ton compte, les règles et la sauvegarde.") : `
-  ${accountCard()}
-  <div class="card"><h2>Règles de rotation</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">Elles servent au prochain plan généré dans la page Coach.</p>
-    <div class="rules">${rulesHtml}</div>
+  <div class="grp-t">Apparence</div>
+  <div class="card grp">
+    ${setRow("color", "Couleur principale", `<span class="dotc" style="background:${cur}"></span>`, colorSetting())}
+    <div class="set"><div><b>Thème</b><div class="muted">Auto suit le réglage du téléphone.</div></div>${segBtns("theme", [["auto","Auto"],["light","Clair"],["dark","Sombre"]])}</div>
   </div>
-  <div class="card"><h2>Mon profil</h2>
-    <div class="form">${profileFields()}</div>
-    <div class="row" style="margin-top:12px"><button class="btn primary" id="profSave">Enregistrer</button><span id="profMsg" class="muted" style="font-size:.9rem"></span></div>
-  </div>
-    <div class="card"><h2>Code de verrouillage</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Ce code protège la page Coach et ces réglages. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
-    <div class="form" style="max-width:480px"><label class="fld"><span>Nouveau code (4 ou 6 chiffres)</span>${pinField("pinSet", "Nouveau code")}</label><label class="fld"><span>Confirme le code</span>${pinField("pinSet2", "Confirme le code")}</label></div>
-    <div class="row" style="margin-top:10px">
-      <button class="btn primary" id="pinSave">Changer le code</button>
-      ${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}
-      <span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>
-  </div>
-    <div class="card"><h2>Sauvegarde</h2>
-    <p class="muted" style="margin:0 0 10px;font-size:.92rem">${CLOUD_ON && user ? "Ton compte sauvegarde déjà tout en ligne. Tu peux en plus garder un fichier de sauvegarde (effectif, plan, saison) chez toi." : "Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil."} Le code de verrouillage n'est pas dans le fichier.</p>
-    <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
-    ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}
-  </div>
-  ${dataCard()}`}`;
+  <div class="grp-t">Moi et mes données</div>
+  ${locked ? pinView("Réglages coach", "Entre ton code de verrouillage pour modifier ton profil, ton compte et la sauvegarde.") : `<div class="card grp">
+    ${setRow("prof", "Mon profil", esc(S.profile?.first || ""), `<div class="form">${profileFields()}</div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="profSave">Enregistrer</button><span id="profMsg" class="muted" style="font-size:.9rem"></span></div>`)}
+    ${CLOUD_ON ? setRow("acc", "Compte en ligne", user ? "Connecté" : "Pas de compte", accountCard() + dataCard()) : ""}
+    ${setRow("pin", "Code de verrouillage", S.pin ? "Actif" : "Aucun", `<p class="muted" style="margin:0 0 10px;font-size:.92rem">${S.pin ? "Ce code protège la page Coach et tes réglages perso. Les joueurs peuvent ouvrir Accueil et Match." : "Aucun code pour l'instant : n'importe qui peut ouvrir la page Coach et voir les notes et les minutes."}</p>
+      <div class="form" style="max-width:480px"><label class="fld"><span>Nouveau code (4 ou 6 chiffres)</span>${pinField("pinSet", "Nouveau code")}</label><label class="fld"><span>Confirme le code</span>${pinField("pinSet2", "Confirme le code")}</label></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="pinSave">Changer le code</button>${S.pin ? `<button class="btn" id="lockNow">🔒 Verrouiller maintenant</button>` : ""}<span id="pinMsg" class="muted" style="font-size:.9rem"></span></div>`)}
+    ${setRow("bk", "Sauvegarde", "", `<p class="muted" style="margin:0 0 10px;font-size:.92rem">${CLOUD_ON && user ? "Ton compte sauvegarde déjà tout en ligne. Tu peux en plus garder un fichier de sauvegarde (effectif, plan, saison) chez toi." : "Tout est gardé sur ce téléphone. Télécharge une sauvegarde de temps en temps (effectif, plan, saison) : elle te permet de tout retrouver sur un autre appareil."} Le code de verrouillage n'est pas dans le fichier.</p>
+      <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
+      ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}`)}
+  </div>`}
+  <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>`;
 }
 function bindSettings(){
   const v = $("#view");
@@ -837,11 +845,12 @@ function bindSettings(){
   $("#colorPick")?.addEventListener("input", e => { if (hexOk(e.target.value)) { const p = clubPalette(e.target.value), st = document.documentElement.style; Object.entries(p).forEach(([k,c]) => st.setProperty("--" + k, c)); appliedColor = ""; } });
   $("#colorPick")?.addEventListener("change", e => setColor(e.target.value));
   $("#colorReset")?.addEventListener("click", () => setColor(DEFAULT_COLOR));
-  if (S.pin && !coachOK) { bindPin(); return; }
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
+  v.querySelectorAll("[data-xp]").forEach(b => b.addEventListener("click", () => { setOpen = setOpen === b.dataset.xp ? null : b.dataset.xp; render(); }));
+  if (S.pin && !coachOK) { bindPin(); return; }
   digitsOnly();
-  $("#pinSave").addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
-  $("#profSave").addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
+  $("#pinSave")?.addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); $("#pinMsg").textContent = "Code enregistré."; });
+  $("#profSave")?.addEventListener("click", () => { const r = readProfile(); if (!r) { $("#profMsg").textContent = "Le prénom et l'équipe sont obligatoires."; return; } persist(); render(); $("#profMsg").textContent = "Profil enregistré."; });
   $("#lockNow")?.addEventListener("click", () => { coachOK = false; goTo("home"); });
   bindAccountCard();
   $("#bkOut")?.addEventListener("click", exportBackup);
@@ -852,46 +861,69 @@ function bindSettings(){
 function pinView(title = "Page coach", text = "Entre ton code de verrouillage pour voir l'effectif et les temps de jeu."){ return `<div class="card pin"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p>${pinField("pinIn", "Code de verrouillage")}<div id="pinErr" class="muted" style="min-height:1.4em"></div><button class="btn primary" id="pinGo">Entrer</button></div>`; }
 function bindPin(){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
+let coachTab = "match", coachStep = null;
+const TIME_HELP = {notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."};
+// Une étape de la préparation du match : une ligne avec son état, qui s'ouvre au toucher.
+function step(id, n, done, title, summary, body){
+  const open = coachStep === id;
+  return `<div class="step${open ? " open" : ""}"><button class="step-h" data-step="${id}" aria-expanded="${open}"><span class="step-n${done ? " ok" : ""}">${done ? "✓" : n}</span><span class="step-t"><b>${esc(title)}</b><span>${esc(summary)}</span></span><span class="step-c" aria-hidden="true">${open ? "⌃" : "›"}</span></button>${open ? `<div class="step-b">${body}</div>` : ""}</div>`;
+}
 function coachView(){
-  const T = computeTargets();
-  const ids = PRESETS[S.preset].map(p=>p[0]);
-  const rows = S.squad.map((p,i) => `<tr class="${p.present?"":"absent"}">
-    <td><input type="checkbox" data-i="${i}" data-k="present" ${p.present?"checked":""} aria-label="Présent"></td>
+  if (!S.squad.length && coachTab === "match") coachTab = "squad";
+  const tabs = `<div class="seg seg-full seg-top" role="tablist">${[["match","Match"],["squad","Effectif"],["season","Saison"]].map(([k,l]) => `<button role="tab" data-ctab="${k}" aria-selected="${coachTab===k}" aria-pressed="${coachTab===k}">${l}</button>`).join("")}</div>`;
+  return tabs + (coachTab === "squad" ? squadTab() : coachTab === "season" ? seasonTab() : matchPrepTab());
+}
+function squadTab(){
+  const rows = S.squad.map((p,i) => `<tr>
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
     <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
     <td><select data-i="${i}" data-k="note" aria-label="Note">${[2,2.5,3,3.5,4,4.5,5].map(n=>`<option ${+p.note===n?"selected":""}>${n}</option>`).join("")}</select></td>
-    <td><input type="number" step="0.5" min="0" data-i="${i}" data-k="minutes" value="${p.minutes||""}" placeholder="${p.present && T[p.name]!==undefined ? R.fmtMin(T[p.name]).replace("'",",").replace(/,$/,"") : ""}" aria-label="Minutes fixées"></td>
     <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="—" aria-label="Passage max"></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
-  const pres = present();
-  const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
-  return `
-  ${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs dans « Effectif », avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
-  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Match en préparation</h2><button class="btn small" id="cList">Mes matchs (${S.matches.length})</button></div>
-    <div class="row" style="margin-top:10px"><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="Nom du match, ex. Wellington – Daring" aria-label="Nom du match" style="flex:1;min-width:200px;border:1px solid var(--rule);border-radius:8px;padding:8px 10px;background:var(--bg);font-weight:600">
-      <input type="date" id="mDate" value="${esc(S.matchDate||"")}" aria-label="Date du match" style="border:1px solid var(--rule);border-radius:8px;padding:7px 10px;background:var(--bg)"></div>
-    <div class="set" style="margin-top:12px"><span>Temps de jeu</span><div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div></div>
-    <p class="muted" style="margin:6px 0 0;font-size:.9rem">${({notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."})[timeMode()]}</p>
-    ${(() => { const fixed = present().filter(p => +p.minutes > 0 && p.pos.some(q => q !== "G")); return fixed.length ? `<div class="warn" style="margin-top:8px">${fixed.length === present().filter(p => p.pos.some(q => q !== "G")).length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
-    ${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:8px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan (en bas de la page) puis touche « Utiliser pour le match ».</div>` : ""}
-  </div>
-  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Effectif</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
-    <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Coche les présents. Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Laisse « Minutes » vide pour un calcul automatique à partir des notes. Corners : D donneur, B bloqueur.</p>
-    <div class="tbl-wrap"><table><thead><tr><th>Là</th><th>Nom</th><th>Postes</th><th>Note</th><th>Minutes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button><button class="btn" id="clearMin">Effacer les minutes fixées</button><span class="muted" style="font-size:.9rem">${pres.length} présents</span></div>
-  </div>
-  <div class="card"><h2>Système et compo de départ</h2>
-      <div class="row" style="margin-bottom:12px"><label for="preset" class="muted">Système</label><select id="preset" style="border:1px solid var(--rule);border-radius:8px;padding:6px 10px;background:var(--bg)">${Object.keys(PRESETS).map(k=>`<option ${k===S.preset?"selected":""}>${k}</option>`).join("")}</select></div>
-      <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>
-  </div>
-  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Saison</h2>
+  return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes joueurs (${S.squad.length})</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
+    <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Corners : D donneur, B bloqueur.</p>
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes</th><th>Note</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
+  </div>`;
+}
+function seasonTab(){
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Saison</h2>
     <div class="row">${S.plan && !S.plan.savedAt ? `<button class="btn primary" id="saveMatchC">Enregistrer le match en cours</button>` : ""}</div></div>
     ${seasonMsg ? `<div class="ok" style="margin-top:8px">${esc(seasonMsg)}</div>` : ""}
     <div style="margin-top:12px">${seasonHtml()}</div>
+  </div>`;
+}
+function matchPrepTab(){
+  const T = computeTargets();
+  const pres = present(), ids = PRESETS[S.preset].map(p => p[0]);
+  const filled = ids.filter(id => S.lineup[id] && pres.some(p => p.name === S.lineup[id])).length;
+  const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
+  const presList = S.squad.map((p,i) => `<label class="chk${p.present ? " on" : ""}"><input type="checkbox" data-i="${i}" data-k="present" ${p.present?"checked":""}> ${esc(p.name)}</label>`).join("");
+  const minList = pres.map(p => { const i = S.squad.indexOf(p); return `<label class="minrow"><span>${esc(p.name)}</span><input type="number" step="0.5" min="0" data-i="${i}" data-k="minutes" value="${p.minutes||""}" placeholder="${T[p.name]!==undefined ? R.fmtMin(T[p.name]).replace("'",",").replace(/,$/,"") : ""}" aria-label="Minutes fixées pour ${esc(p.name)}"></label>`; }).join("");
+  const rulesHtml = RULE_LABELS.filter(([k]) => k !== "alertSec").map(([k,l,st]) => `<label>${esc(l)}<input type="number" step="${st}" data-rule="${k}" value="${S.rules[k]}"></label>`).join("");
+  const anyMin = S.squad.some(p => p.minutes);
+  return `<div class="prep-h"><div style="min-width:0"><div class="prep-t">${esc(S.matchLabel || "Match sans nom")}</div><div class="muted">${esc(fmtDate(S.matchDate))} · ${esc(matchStatus(curMatchRec()))}</div></div><button class="btn small" id="cList">Mes matchs (${S.matches.length})</button></div>
+  <div class="card steps-card">
+    ${step("info", 1, !!S.matchLabel, "Adversaire et date", S.matchLabel ? `${S.matchLabel} · ${fmtDate(S.matchDate)}` : "À remplir",
+      `<div class="form"><label class="fld"><span>Nom du match</span><input type="text" id="mLabel" value="${esc(S.matchLabel||"")}" placeholder="ex. Wellington – Daring"></label><label class="fld"><span>Date</span><input type="date" id="mDate" value="${esc(S.matchDate||"")}"></label></div>`)}
+    ${step("pres", 2, pres.length >= ids.length, "Présents", `${pres.length} joueurs sur ${S.squad.length}`,
+      `<div class="chks">${presList}</div>`)}
+    ${step("compo", 3, filled === ids.length, "Compo de départ", `${S.preset} · ${filled} postes sur ${ids.length}`,
+      `<div class="row" style="margin-bottom:12px"><label for="preset" class="muted">Système</label><select id="preset" style="border:1px solid var(--rule);border-radius:8px;padding:6px 10px;background:var(--bg)">${Object.keys(PRESETS).map(k=>`<option ${k===S.preset?"selected":""}>${k}</option>`).join("")}</select></div>
+      <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>`)}
+    ${step("time", 4, true, "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin ? " · minutes fixées" : ""),
+      `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
+      <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]} Laisse une case vide pour le calcul automatique (en gris).</p>
+      ${(() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
+      <div class="mins">${minList}</div>`)}
+    ${step("rules", 5, true, "Règles de rotation", `Quarts de ${R.fmtMin(+S.rules.qlen)} · passage max ${R.fmtMin(+S.rules.maxStint)}`,
+      `<div class="rules">${rulesHtml}</div>`)}
   </div>
-  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Plan de rotation</h2>
-    <div class="row">${S.plan ? `<button class="btn" id="pdfB">📄 Plan B (PDF)</button>` : ""}<button class="btn primary" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go" id="use">Utiliser pour le match</button>` : ""}</div></div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Plan de rotation</h2>${S.plan ? `<button class="btn small" id="pdfB">📄 Plan B (PDF)</button>` : ""}</div>
+    ${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
+    <div class="row" style="margin-top:10px"><button class="btn primary${preview ? "" : " big"}" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go big" id="use">Utiliser pour le match</button>` : ""}</div>
     <div id="genOut" style="margin-top:12px">${previewHtml()}</div>
   </div>`;
 }
@@ -924,9 +956,12 @@ function bindCoach(){
   v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; p.pos = p.pos.filter(q => q !== b.dataset.q); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
-  $("#addP").addEventListener("click", () => { S.squad.push({name:"Nouveau joueur",pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
+  $("#addP")?.addEventListener("click", () => { S.squad.push({name:"Nouveau joueur",pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
-  $("#preset").addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
+  $("#preset")?.addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
+  v.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => { coachTab = b.dataset.ctab; render(); }));
+  v.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => { coachStep = coachStep === b.dataset.step ? null : b.dataset.step; render(); }));
+  v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { S.rules[el.dataset.rule] = +el.value; preview=null; persist(); render(); }));
   v.querySelectorAll("[data-lu]").forEach(el => el.addEventListener("change", () => { const id = el.dataset.lu; for (const k in S.lineup) if (S.lineup[k] === el.value && k !== id) delete S.lineup[k]; if (el.value) S.lineup[id] = el.value; else delete S.lineup[id]; preview=null; persist(); render(); }));
   $("#pdfB")?.addEventListener("click", makePdf);
   $("#matchLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value; persist(); render(); });
@@ -936,7 +971,7 @@ function bindCoach(){
   document.querySelectorAll("[data-tmode]").forEach(b => b.addEventListener("click", () => { S.timeMode = b.dataset.tmode; preview = null; persist(); render(); }));
   $("#cList")?.addEventListener("click", () => { matchesOpen = true; goTo("match"); });
   document.querySelectorAll("[data-delm]").forEach(b => b.addEventListener("click", () => { if (b.dataset.armed) deleteMatch(b.dataset.delm); else { b.dataset.armed = 1; b.textContent = "Sûr ?"; } }));
-  $("#gen").addEventListener("click", () => { const b = $("#gen"); b.disabled = true; b.textContent = "Calcul…"; setTimeout(() => { preview = generate(Date.now() % 100000 + (seedN++)); render(); }, 30); });
+  $("#gen")?.addEventListener("click", () => { const b = $("#gen"); b.disabled = true; b.textContent = "Calcul…"; setTimeout(() => { preview = generate(Date.now() % 100000 + (seedN++)); render(); }, 30); });
   $("#use")?.addEventListener("click", () => { S.plan = preview; preview = null; S.prevPlan = null; S.basePlan = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; pushClock(); persist(); render(); });
 }
 
