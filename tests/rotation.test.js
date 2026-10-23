@@ -183,3 +183,47 @@ test("maximum d'affilée par ligne : chaque joueur respecte le maximum de sa lig
   for (const p of pl) { if (p.oneBlock || !p.maxStint) continue;
     for (const [a, b] of res.intervals[p.name]) assert.ok(b - a <= p.maxStint + EPS, `${p.name} : passage de ${b - a}' (max ${p.maxStint}')`); }
 });
+
+// ---------- imprévus : les règles du coach tiennent après le recalcul ----------
+const rulesQ = R.migrateRules({...rules, per: {0: {startBlock: 6}, 3: {endBlock: 5, maxEntries: 2}}, maxDef: 22, maxMid: 22, maxAtt: 18});
+const playersL = players.map(p => ({...p, maxStint: p.maxStint || ({def: 22, dm: 22, mid: 22, att: 18})[LINE[p.pos[0]]] || 0}));
+const planQ = R.buildPlan({positions, players: playersL, lineup: ex.lineup, rules: rulesQ, seed: 4242, iters: 200, saIters: 30000, chains: 3});
+const hard = w => /hors des moments permis|en même temps|revient après|passage de plus/.test(w);
+const fieldAt = (pl, t) => Object.keys(segAt(pl, t).on).filter(n => segAt(pl, t).on[n] !== "G" && !playersL.find(p => p.name === n).locked);
+
+test("blessure : fenêtres par quart, entrées max, banc mini et passage max par ligne respectés", () => {
+  // un poste que plusieurs joueurs connaissent (sinon la règle ne peut pas tenir : voir le message au coach)
+  const T = 31, on = segAt(planQ, T).on, hurtP = fieldAt(planQ, T).find(n => ["6", "7", "8", "9", "10"].includes(on[n]));
+  const subP = present.find(p => !(p.name in on) && p.pos.includes(on[hurtP]));
+  const res = R.replan(planQ, {T, positions, players: playersL, rules: rulesQ, out: [hurtP], vacate: [], adjust: {}, enter: subP ? {name: subP.name, pos: on[hurtP]} : undefined, seed: 3, saIters: 20000});
+  assert.ok(!res.error, String(res.warnings));
+  assert.deepStrictEqual(res.warnings.filter(hard), []);
+  for (const c of res.changes) if (c.t > T + EPS) assert.ok(inWindow(rulesQ, c.t), `changement à ${c.t}`);
+});
+
+test("carton jaune : à 10 pendant la carte, le joueur revient à la fin, les autres peuvent encore tourner", () => {
+  const T = 24, T1 = 34, p = fieldAt(planQ, T)[1];
+  const res = R.replan(planQ, {T, positions, players: playersL, rules: rulesQ, out: [], vacate: [], adjust: {[p]: -10}, freezeUntil: T1, freezeOut: [p], seed: 3, saIters: 20000});
+  assert.ok(!res.error, String(res.warnings));
+  for (const s of res.segs.filter(s => s.a >= T - EPS && s.b <= T1 + EPS)) { assert.ok(!(p in s.on), `${p} sur le terrain à ${s.a}`); assert.strictEqual(Object.keys(s.on).length, 10); }
+  assert.ok(p in segAt(res, T1).on, `${p} ne revient pas à ${T1}`);
+  for (const s of res.segs.filter(s => s.a >= T1 - EPS)) assert.strictEqual(Object.keys(s.on).length, 11);
+  for (const c of res.changes) if (c.t > T + EPS && Math.abs(c.t - T1) > EPS) assert.ok(inWindow(rulesQ, c.t), `changement à ${c.t}`);
+  assert.deepStrictEqual(res.warnings.filter(hard), []);
+});
+
+test("carton jaune 10' dans les 10 dernières minutes : pas de plantage", () => {
+  const T = 63, p = fieldAt(planQ, T)[0];
+  const res = R.replan(planQ, {T, positions, players: playersL, rules: rulesQ, out: [], vacate: [], adjust: {[p]: -7}, freezeUntil: 70, freezeOut: [p], seed: 3, saIters: 8000});
+  assert.ok(!res.error, String(res.warnings));
+  assert.strictEqual(res.segs[res.segs.length - 1].b, 70);
+});
+
+test("un joueur sorti juste avant un imprévu respecte le banc minimum avant de revenir", () => {
+  const ch = planQ.changes.find(c => c.t > 20 && c.t < 50 && c.outs.length);
+  const left = ch.outs[0][0], T = ch.t + 0.5, hurtP = fieldAt(planQ, T).find(n => n !== left);
+  const res = R.replan(planQ, {T, positions, players: playersL, rules: rulesQ, out: [hurtP], vacate: [], adjust: {}, seed: 3, saIters: 20000});
+  assert.ok(!res.error, String(res.warnings));
+  const back = res.segs.find(s => s.a > ch.t + EPS && left in s.on);
+  if (back) assert.ok(back.a - ch.t >= rulesQ.minBench - EPS, `${left} revient après ${back.a - ch.t}'`);
+});
