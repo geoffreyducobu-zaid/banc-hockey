@@ -327,8 +327,9 @@ function bindMatches(){
 }
 // Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
 // Un match déjà fini et enregistré repart aussi de zéro : il sort de la saison et sera réenregistré à la fin.
-function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; if (S.plan?.manual) S.plan = manualPlan([]);
-  if (S.plan?.savedAt) { const at = S.plan.savedAt; delete S.plan.savedAt; unsaveSeason(at); } S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
+function resetMatch(){ const at = S.plan?.savedAt; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; if (S.plan?.manual) S.plan = manualPlan([]);
+  // (le plan d'avant les imprévus n'a pas la marque « enregistré » : on la lit avant de le remettre)
+  if (S.plan) delete S.plan.savedAt; if (at) unsaveSeason(at); S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
 function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Array.from({length:n}, () => [200,100]).flat()); } catch(e){} } if (!actx || !prefs.sound) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
@@ -1381,7 +1382,7 @@ function bindManual(){
   $("#mView")?.addEventListener("input", e => { mView = +e.target.value; const t = qa + mView / 60; $("#mPitch").innerHTML = manualPitch(t); $("#mViewT").textContent = R.fmtMin(mView / 60); });
 }
 // Avant le match, le plan « Mes changements » suit la compo, les présents et le format.
-function mRefresh(){ if (S.plan?.manual && !S.plan.savedAt && !matchStarted()) { const p = manualPlan([]); if (JSON.stringify(p.segs) !== JSON.stringify(S.plan.segs) || JSON.stringify(p.warnings) !== JSON.stringify(S.plan.warnings) || p.fmt !== S.plan.fmt) { S.plan = p; persist(); } } }
+function mRefresh(){ if (!ADJ && S.plan?.manual && !S.plan.savedAt && !matchStarted()) { const p = manualPlan([]); if (JSON.stringify(p.segs) !== JSON.stringify(S.plan.segs) || JSON.stringify(p.warnings) !== JSON.stringify(S.plan.warnings) || p.fmt !== S.plan.fmt) { S.plan = p; persist(); } } }
 function matchPrepTab(){
   // Liste de changements active : le plan suit la compo et les présents tant que le match n'a pas commencé.
   mRefresh();
