@@ -18,7 +18,7 @@ const pWord = () => halves() ? "mi-temps" : "quart";
 let S = {squad:[],preset:"3-2-3-2",lineup:{},rules:defaultRules(),plan:null,pin:""};
 let mode = "home", coachOK = false, preview = null, seedN = 1;
 const SID = Math.random().toString(36).slice(2);
-let inc = null, incBusy = false, incMsg = "";
+let inc = null, incBusy = false, incMsg = "", healAsk = null; // healAsk : joueur dont on confirme la fin de blessure
 // Réglages de l'app, propres à cet appareil (pas dans la sauvegarde).
 let prefs = {sound:true, vibrate:true, theme:"auto"}; try { prefs = {...prefs, ...JSON.parse(localStorage.getItem("banc-prefs") || "{}")}; } catch(e){}
 function savePrefs(){ try { localStorage.setItem("banc-prefs", JSON.stringify(prefs)); } catch(e){} }
@@ -357,12 +357,23 @@ function replanBase(T){
   return o;
 }
 function applyPlan(res){ ["timeMode", "rulesSig", "fmt"].forEach(k => { if (S.plan?.[k]) res[k] = S.plan[k]; }); if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
-function endInjury(n){
+// Fin de blessure. catchUp = true : le plan lui rend les minutes manquées (reprises un peu sur les autres).
+// false : il ne rattrape rien, il garde seulement ce qui était prévu pour lui après ce moment avant sa blessure.
+function endInjury(n, catchUp = true){
+  healAsk = null;
   const T = Math.floor(matchT()*10)/10;
   const o = replanBase(T); o.out = o.out.filter(x => x !== n);
+  const ev = eventsOf().find(e => e.type==="bless" && e.player===n && e.back === undefined);
+  if (!catchUp) {
+    const END = S.rules.quarters*S.rules.qlen, pl = o.players.find(x => x.name === n);
+    const played = S.plan.segs.reduce((a, s) => a + (n in s.on ? Math.max(0, Math.min(s.b, T) - s.a) : 0), 0);
+    const after = ev?.was ? ev.was.reduce((a, [x, y]) => a + Math.max(0, Math.min(y, END) - Math.max(x, T)), 0)
+      : Math.max(0, pl.target - played - (T - (ev?.t ?? T)));
+    o.adjust[n] = played + after - pl.target;
+  }
   const res = R.replan(S.plan, o);
   if (res.error) { incMsg = res.warnings.join(" "); render(); return; }
-  res.events = [...eventsOf().map(e => e.type==="bless" && e.player===n && e.back === undefined ? {...e, back:T} : e), {t:T, type:"retour", player:n}];
+  res.events = [...eventsOf().map(e => e === ev ? {...e, back:T} : e), {t:T, type:"retour", player:n, catchUp}];
   applyPlan(res);
 }
 function doIncident(){
@@ -397,7 +408,7 @@ function doIncident(){
     if (pl && !pl.pos.includes(q)) { pl.pos = [...pl.pos, q]; extra = q; res = R.replan(S.plan, o); }
   }
   if (res.error) { incMsg = res.warnings.join(" "); incBusy = false; render(); return; }
-  res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, extraPos: extra, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp}];
+  res.events = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, extraPos: extra, d:info.d, pos: seg.on[p] || null, catchUp: !!inc.catchUp, ...(type === "bless" ? {was: S.plan.intervals?.[p] || null} : {})}];
   // Une règle ne peut pas être tenue : on montre pourquoi avant d'appliquer.
   if (res.warnings.length) { inc.pending = res; incBusy = false; render(); return; }
   applyPlan(res);
@@ -408,8 +419,10 @@ function activeBanners(t){
     const i = INC[e.type];
     if (timedCard(e.type) && t >= e.t - 1e-6 && t < e.t + e.d) out.push(`<div class="banner ${e.type}"><b>${i.icon} ${esc(i.label)} : ${esc(e.player)}</b> exclu, on joue à 10. Retour dans <span data-until="${e.t+e.d}">${fmtClock((e.t+e.d-t)*60)}</span></div>`);
     if (e.type==="rouge" && t >= e.t - 1e-6) out.push(`<div class="banner rouge"><b>🟥 Carton rouge : ${esc(e.player)}</b> exclu jusqu'à la fin, on joue à 10.</div>`);
-    if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(`<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span><button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button></div>`);
-    if (e.type==="retour" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner vert"><b>✚ ${esc(e.player)} de retour</b> : il est sur le banc, le plan lui redonne du temps.</div>`);
+    if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(healAsk === e.player
+      ? `<div class="banner bless"><b>🩹 ${esc(e.player)} revient.</b> Doit-il rattraper son temps de jeu ?<div class="note" style="color:inherit;opacity:.85;margin-top:4px">Oui : le plan lui rend les minutes manquées en reprenant un peu sur les autres. Non : il garde seulement le temps qui était prévu pour lui à partir de maintenant.</div><div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn small" data-heal="${esc(e.player)}" data-catch="1">Oui, rattraper</button><button class="btn small" data-heal="${esc(e.player)}" data-catch="0">Non</button><button class="btn small" id="healCancel">Annuler</button></div></div>`
+      : `<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span><button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button></div>`);
+    if (e.type==="retour" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner vert"><b>✚ ${esc(e.player)} de retour</b> : il est sur le banc, ${e.catchUp === false ? "il reprend le temps prévu sans rattraper." : "le plan lui redonne du temps."}</div>`);
   });
   return out.join("");
 }
@@ -451,9 +464,11 @@ function incidentPanel(seg){
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quel joueur ?</div>
     <div class="inc-players">${onField.map(n => `<button class="btn" data-incp="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)}</button>`).join("")}</div>
     ${subHtml}
-    ${card ? `<label class="row" style="margin-top:10px;font-size:.95rem"><input type="checkbox" id="catchUp" ${inc.catchUp?"checked":""}> Rattraper le temps de la carte plus tard</label>` : ""}
+    ${card ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">À son retour, doit-il rattraper les ${INC[inc.type].d} minutes de la carte ?</div>
+    <div class="inc-players"><button class="btn" data-catch-card="1" aria-pressed="${inc.catchUp===true}">Oui, rattraper</button><button class="btn" data-catch-card="0" aria-pressed="${inc.catchUp===false}">Non</button></div>
+    ${inc.catchUp !== undefined ? `<div class="muted" style="margin-top:6px;font-size:.88rem">${inc.catchUp ? "Le plan lui rendra ces minutes en reprenant un peu sur les autres." : "Il perd ces minutes, les autres jouent un peu plus."}</div>` : ""}` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
-    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy && !(card && inc.catchUp === undefined) ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
   </div>`;
 }
 /* ---------- match sheet ---------- */
@@ -789,7 +804,7 @@ function bindMatch(){
   document.querySelectorAll("[data-mtab]").forEach(b => b.addEventListener("click", () => { matchTab = b.dataset.mtab; render(); }));
   $("#farOff")?.addEventListener("click", () => setFar(false));
   $("#saveMatch")?.addEventListener("click", saveMatch);
-  $("#incOpen")?.addEventListener("click", () => { inc = {type:null, player:null, catchUp:false}; incMsg = ""; render(); });
+  $("#incOpen")?.addEventListener("click", () => { inc = {type:null, player:null}; incMsg = ""; render(); });
   $("#incCancel")?.addEventListener("click", () => { inc = null; render(); });
   $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed && ADJ) adjAsk("undo"); else if (this.dataset.armed) { S.plan = S.prevPlan; S.prevPlan = null; syncDone(); pushClock(); persist(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
   $("#swapOpen")?.addEventListener("click", () => { inc = {type:"libre", player:null, inP:null}; incMsg = ""; render(); });
@@ -799,9 +814,15 @@ function bindMatch(){
   document.querySelectorAll("[data-inct]").forEach(b => b.addEventListener("click", () => { inc.type = b.dataset.inct; inc.inP = undefined; render(); }));
   document.querySelectorAll("[data-incp]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.incp; inc.inP = undefined; render(); }));
   document.querySelectorAll("[data-incin]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.incin; render(); }));
-  document.querySelectorAll("[data-heal]").forEach(b => b.addEventListener("click", function(){ if (this.dataset.armed) { if (ADJ) adjAsk("heal", {player:this.dataset.heal}); else endInjury(this.dataset.heal); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } }));
+  document.querySelectorAll("[data-heal]").forEach(b => b.addEventListener("click", function(){
+    const n = this.dataset.heal;
+    if (this.dataset.catch === undefined) { healAsk = n; render(); return; }
+    const catchUp = this.dataset.catch === "1";
+    if (ADJ) { healAsk = null; adjAsk("heal", {player:n, catchUp}); } else endInjury(n, catchUp);
+  }));
+  $("#healCancel")?.addEventListener("click", () => { healAsk = null; render(); });
   $("#incBack")?.addEventListener("click", () => { inc.pending = null; render(); });
-  $("#catchUp")?.addEventListener("change", e => { inc.catchUp = e.target.checked; });
+  document.querySelectorAll("[data-catch-card]").forEach(b => b.addEventListener("click", () => { inc.catchUp = b.dataset.catchCard === "1"; render(); }));
   $("#incGo")?.addEventListener("click", () => { if (ADJ) { adjAsk("incident", {inc:adjInc(), force:!!inc.pending}); return; } incBusy = true; render(); setTimeout(doIncident, 40); });
 }
 function setFar(v){ far = v; try { localStorage.setItem("banc-far", v ? "1" : "0"); } catch(e){} render(); }
