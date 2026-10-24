@@ -59,6 +59,13 @@
     return r;
   }
 
+  // Plus long morceau de [a, b] sans pause entre quarts : une pause remet à zéro le temps d'affilée sur le terrain.
+  function longestRun(a, b, ql) {
+    let m = 0, x = a;
+    while (x < b - EPS) { const e = Math.min(b, (Math.floor((x + EPS) / ql) + 1) * ql); m = Math.max(m, e - x); x = e; }
+    return m;
+  }
+
   function changeTimes(R) {
     const T = new Set();
     for (let q = 0; q < R.quarters; q++) {
@@ -98,7 +105,7 @@
       const canLeave = p => !locked.has(p) && (t - st[p].since) >= I.minS[p] - EPS;
       const gkChangeOk = isBreak || !rq(R, qi, 'gkOnlyAtBreaks');
       // forced
-      const forcedOut = onList.filter(p => !locked.has(p) && (next - st[p].since) > I.maxS[p] + EPS && canLeave(p));
+      const forcedOut = onList.filter(p => !locked.has(p) && longestRun(st[p].since, next, R.qlen) > I.maxS[p] + EPS && canLeave(p));
       const forcedIn = benchList.filter(p => {
         if (!canEnter(p)) return false;
         const bq = Math.max(st[p].since, qStart(t));
@@ -165,7 +172,7 @@
     for (const p of players) {
       for (const [a, b] of iv[p]) {
         if (b - a < I.minS[p] - EPS && b < END - EPS) v += 1;
-        if (!I.locked.has(p) && b - a > I.maxS[p] + EPS) v += 1;
+        if (!I.locked.has(p) && longestRun(a, b, R.qlen) > I.maxS[p] + EPS) v += 1;
       }
       if (!I.fieldPlayer[p] || I.locked.has(p)) continue;
       let t = R.from || 0; const off = [];
@@ -232,7 +239,8 @@
             const L = grid[s] - runStart;
             if (L < I.minS[p] - EPS && !(R.until && s === nS)) pen += 300 + (I.minS[p] - L) * 30;
             if (I.minFirst[p] && Math.abs(runStart - F0) < EPS && F0 === 0 && L < I.minFirst[p] - EPS) pen += 300 + (I.minFirst[p] - L) * 30;
-            if (!locked.has(p) && L > I.maxS[p] + EPS) pen += 300 + (L - I.maxS[p]) * 30;
+            const Lr = longestRun(runStart, grid[s], R.qlen);
+            if (!locked.has(p) && Lr > I.maxS[p] + EPS) pen += 300 + (Lr - I.maxS[p]) * 30;
             if (s < nS && gkOnly[i] && gkLock[s]) pen += 40;
             benchStart = grid[s];
           }
@@ -546,6 +554,8 @@
   function checkRules(segs, players, R, c) {
     const END = R.quarters * R.qlen, out = [], T1 = c.T1, pName = q => (R.quarters === 2 ? 'MT' : 'Q') + (q + 1);
     const qOf = t => Math.min(R.quarters - 1, Math.floor((t + EPS) / R.qlen));
+    // Un message par joueur et par règle, avec la pire valeur réelle entre parenthèses.
+    const worst = new Map(), note = (key, txt, v, more) => { const w = worst.get(key); if (!w || (more ? v > w.v : v < w.v)) worst.set(key, { txt, v }); };
     const forced = t => Math.abs(t - c.T) < EPS || Math.abs(t - T1) < EPS;
     // moments de changement et entrées en même temps
     for (let i = 1; i < segs.length; i++) {
@@ -563,8 +573,9 @@
       const minS = Math.max(R.minStint, p.minStint || 0), maxS = fixed ? END : Math.max(minS, p.maxStint || R.maxStint);
       for (const [a, b] of iv) {
         if (b < T1 + EPS) continue;
-        if (b - a < minS - EPS && b < END - EPS && !(c.hit.has(p.name) && Math.abs(b - c.T) < EPS)) out.push(`${p.name} : passage de moins de ${fmtMin(minS)}`);
-        if (b - a > maxS + EPS) out.push(`${p.name} : passage de plus de ${fmtMin(maxS)}`);
+        if (b - a < minS - EPS && b < END - EPS && !(c.hit.has(p.name) && Math.abs(b - c.T) < EPS)) note(p.name + '<', `${p.name} : passage de moins de ${fmtMin(minS)}`, b - a, false);
+        const run = longestRun(a, b, R.qlen);
+        if (run > maxS + EPS) note(p.name + '>', `${p.name} : plus de ${fmtMin(maxS)} d'affilée sur le terrain`, run, true);
       }
       if (!field || fixed) continue;
       // banc : morceaux hors du terrain (sans la période où il était exclu par un carton)
@@ -577,13 +588,15 @@
         for (let q = 0; q < R.quarters; q++) {
           const qa = q * R.qlen, mb = rq(R, q, 'maxBench');
           if (qa + R.qlen <= T1 + EPS) continue;
-          if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > mb + EPS) out.push(`${p.name} : plus de ${fmtMin(mb)} sur le banc ${R.quarters === 2 ? 'en' : 'au'} ${pName(q)}`);
+          const d = Math.min(b, qa + R.qlen) - Math.max(a, qa);
+          if (d > mb + EPS) note(p.name + 'b' + q, `${p.name} : plus de ${fmtMin(mb)} sur le banc ${R.quarters === 2 ? 'en' : 'au'} ${pName(q)}`, d, true);
         }
-        if (a > EPS && b < END - EPS && b - a < R.minBench - EPS && !forced(b)) out.push(`${p.name} : revient après ${fmtMin(b - a)} sur le banc (minimum ${fmtMin(R.minBench)})`);
+        if (a > EPS && b < END - EPS && b - a < R.minBench - EPS && !forced(b)) note(p.name + 'r', `${p.name} : revient après moins de ${fmtMin(R.minBench)} sur le banc`, b - a, false);
       }
       const played = iv.reduce((s, [a, b]) => s + b - a, 0), tg = c.targets[p.name] || 0;
-      if (tg >= R.minPlay && played < R.minPlay - 0.5) out.push(`${p.name} : jouera moins que le temps de jeu minimum`); // sans chiffres : cet écran peut être vu hors de la page Coach
+      if (tg >= R.minPlay && played < R.minPlay - 0.5) worst.set(p.name + 'm', { txt: `${p.name} : jouera moins que le temps de jeu minimum`, v: null }); // sans chiffres : cet écran peut être vu hors de la page Coach
     }
+    worst.forEach(w => out.push(w.v === null ? w.txt : `${w.txt} (${fmtMin(w.v)})`));
     return [...new Set(out)];
   }
   function finalize(segs, players, targets, warnings, events) {

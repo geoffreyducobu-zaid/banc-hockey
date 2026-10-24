@@ -137,6 +137,16 @@ function zeroStarters(){ if (timeMode() !== "notes") return []; const T = comput
 function budgetLine(){
   const b = minBudget(), used = b.total - b.left, x = R.fmtMin(Math.abs(b.left)), pct = Math.min(100, used / b.total * 100);
   const over = b.left < -0.01, done = !over && b.left < 0.01, cls = over || (done && b.auto) || (!done && !b.auto) ? " over" : done ? " ok" : "";
+  // Égal pour tous / par ligne : l'app partage elle-même ce qui reste, il n'y a rien à distribuer à la main.
+  if (!over && !done && b.auto && timeMode() !== "notes") {
+    const T = computeTargets(), gk = PRESETS[S.preset][0][0], fixed = b.total - b.left > 0.01;
+    const auto = present().filter(p => p.pos.some(q => q !== gk) && !(+p.minutes > 0)), avg = L => R.fmtMin(L.reduce((a, p) => a + (T[p.name] || 0), 0) / L.length);
+    const LN = {def: "Défense", mid: "Milieu", att: "Attaque"}, grp = p => lineGroup(posMeta(p.pos.find(q => q !== gk) || "").line);
+    const per = timeMode() === "all" ? `environ ${avg(auto)} par joueur` : ["def", "mid", "att"].map(g => auto.filter(p => grp(p) === g)).map((L, i) => L.length ? `${LN[["def", "mid", "att"][i]]} ${avg(L)}` : "").filter(Boolean).join(" · ") + " par joueur";
+    return `<div class="budget ok"><div class="budget-big">0' à distribuer : tout est réparti</div>
+    <div class="budget-bar"><i style="width:100%"></i></div>
+    <div class="budget-sub">${R.fmtMin(b.total)} distribuées sur ${R.fmtMin(b.total)} (${b.slots} postes × ${R.fmtMin(b.END)}). ${fixed ? `${R.fmtMin(b.total - b.left)} fixées à la main, le reste partagé` : "Partagées"} à parts égales${timeMode() === "line" ? " dans chaque ligne" : ""} : ${per}. Tu peux fixer les minutes d'un joueur, le reste est repartagé.</div></div>`;
+  }
   const big = over ? `Tu dépasses de ${x}` : done ? "Tout est distribué" : `Il te reste ${x} à distribuer`;
   const note = over ? "Enlève des minutes à certains joueurs."
     : done ? (b.auto ? `Plus rien pour les ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes : enlève des minutes ou remplis leur case.` : "")
@@ -1238,7 +1248,7 @@ function rulesBody(){
   <div class="card grp rules-all">
     <div class="set"><div><b>Minimum avant de sortir</b><div class="muted">Un joueur reste au moins ce temps sur le terrain, selon sa ligne (son 1er poste).</div></div>
       <div class="rline">${[["minDef","Défense"],["minMid","Milieu"],["minAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Minimum avant de sortir, ${l.toLowerCase()}"></label>`).join("")}</div></div>
-    <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. Tu peux le changer pour un joueur dans Effectif.</div></div>
+    <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. La pause entre deux quarts remet ce compteur à zéro. Tu peux le changer pour un joueur dans Effectif.</div></div>
       <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
     ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
