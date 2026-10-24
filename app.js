@@ -111,7 +111,9 @@ function computeTargets(){
   const gk = ids[0];
   const P = present().map(p => ({name:p.name, note: isMainGk(p) ? 5 : 3, override: p.minutes ? +p.minutes : 0, field: p.pos.some(q => q !== gk)}));
   const tm = timeMode(), byNotes = R.targetsFromNotes(P, ids.length - 1, END).targets;
-  if (tm === "notes" || tm === "manual") return byNotes;
+  // Plan automatique : chaque joueur joue les minutes que le coach lui donne (0 si la case est vide), le gardien titulaire tout le match.
+  if (tm === "notes") { const out = {}; P.forEach(x => out[x.name] = x.override ? x.override : x.note >= 5 ? END : 0); return out; }
+  if (tm === "manual") return byNotes;
   // Égal pour tous : un seul groupe. Égal par ligne : la ligne du premier poste du joueur.
   const groupOf = id => tm === "all" ? "all" : lineGroup(posMeta(id).line);
   const slots = {}; ids.slice(1).forEach(id => slots[groupOf(id)] = (slots[groupOf(id)] || 0) + 1);
@@ -126,15 +128,19 @@ function minBudget(){
   const field = present().filter(p => p.pos.some(q => q !== gk));
   const fixedOf = p => +p.minutes > 0 ? Math.min(END, +p.minutes) : 0;
   const total = (ids.length - 1) * END, used = field.reduce((a, p) => a + fixedOf(p), 0);
-  return {END, slots: ids.length - 1, total, left: total - used, auto: field.filter(p => !fixedOf(p)).length};
+  return {END, slots: ids.length - 1, total, left: total - used, auto: timeMode() === "notes" ? 0 : field.filter(p => !fixedOf(p)).length};
 }
+// En Plan automatique, le plan ne se génère que si toutes les minutes sont données.
+function budgetBlock(){ if (timeMode() !== "notes") return null; const b = minBudget(); return Math.abs(b.left) > 0.01 ? b : null; }
+// Plan automatique : un titulaire de la compo à 0 minute ne peut pas commencer le match.
+function zeroStarters(){ if (timeMode() !== "notes") return []; const T = computeTargets(); return Object.values(S.lineup).filter(n => n && present().some(p => p.name === n) && !(T[n] > 0)); }
 function budgetLine(){
   const b = minBudget(), used = b.total - b.left, x = R.fmtMin(Math.abs(b.left)), pct = Math.min(100, used / b.total * 100);
   const over = b.left < -0.01, done = !over && b.left < 0.01, cls = over || (done && b.auto) || (!done && !b.auto) ? " over" : done ? " ok" : "";
   const big = over ? `Tu dépasses de ${x}` : done ? "Tout est distribué" : `Il te reste ${x} à distribuer`;
   const note = over ? "Enlève des minutes à certains joueurs."
     : done ? (b.auto ? `Plus rien pour les ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes : enlève des minutes ou remplis leur case.` : "")
-    : b.auto ? `Elles iront automatiquement aux ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes (chiffres en gris).` : "Ajoute des minutes ou vide une case pour le calcul automatique.";
+    : b.auto ? `Elles iront automatiquement aux ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes (chiffres en gris).` : timeMode() === "notes" ? "Un joueur sans minutes ne joue pas." : "Ajoute des minutes ou vide une case pour le calcul automatique.";
   return `<div class="budget${cls}"><div class="budget-big">${big}</div>
     <div class="budget-bar"><i style="width:${pct}%"></i></div>
     <div class="budget-sub">${R.fmtMin(used)} distribuées sur ${R.fmtMin(b.total)} (${b.slots} postes × ${R.fmtMin(b.END)})${note ? `. ${note}` : ""}</div></div>`;
@@ -155,7 +161,8 @@ function generate(seed){
   syncMinStint();
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
-  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: p.maxStint ? +p.maxStint : maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
+  // Plan automatique : un joueur à 0 minute reste sur le banc tout le match.
+  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: p.maxStint ? +p.maxStint : maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -385,7 +392,9 @@ function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).m
 function replanBase(T){
   const positions = PRESETS[S.preset].map(x => ({id:x[0], gk:x[2]==="gk"}));
   const Tg = computeTargets();
-  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: x.maxStint ? +x.maxStint : maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  // Plan automatique : un joueur à 0 minute reste hors du plan, sauf s'il a joué ou si le coach le fait entrer.
+  const sits = x => S.plan.timeMode === "notes" && !(S.plan.targets?.[x.name] > 0) && !(playedUntil(S.plan, x.name, T) > 0) && !eventsOf().some(e => e.inP === x.name) && inc?.inP !== x.name;
+  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: x.maxStint ? +x.maxStint : maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
@@ -1097,7 +1106,7 @@ function pinView(title = "Page coach", text = "Entre ton code de verrouillage po
 function bindPin(onOk){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; if (onOk) onOk(); render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
 let coachTab = "match", coachStep = null, squadMsg = "";
-const TIME_HELP = {notes:"Tu donnes à chaque joueur ses minutes et l'app fait le plan. Une case vide prend une part égale des minutes qui restent.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui.", manual:"Tu écris toi-même tous les changements du match, quart par quart, dans « Plan de rotation » plus bas. L'app ne calcule rien et n'applique pas les règles."};
+const TIME_HELP = {notes:"Tu donnes à chaque joueur ses minutes et l'app fait le plan. Un joueur à 0 reste sur le banc. Le gardien de la compo garde le but tout le match, sauf si tu lui mets d'autres minutes.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui.", manual:"Tu écris toi-même tous les changements du match, quart par quart, dans « Plan de rotation » plus bas. L'app ne calcule rien et n'applique pas les règles."};
 // Une étape de la préparation du match : une ligne avec son état, qui s'ouvre au toucher.
 function step(id, n, done, title, summary, body){
   const open = coachStep === id;
@@ -1435,7 +1444,7 @@ function matchPrepTab(){
   const filled = ids.filter(id => S.lineup[id] && pres.some(p => p.name === S.lineup[id])).length;
   const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
   const presList = S.squad.map((p,i) => `<label class="chk${p.present ? " on" : ""}"><input type="checkbox" data-i="${i}" data-k="present" ${p.present?"checked":""}> ${esc(p.name)}</label>`).join("");
-  const minList = pres.map(p => { const i = S.squad.indexOf(p); return `<label class="minrow"><span>${esc(p.name)}</span><input type="number" step="0.5" min="0" data-i="${i}" data-k="minutes" value="${p.minutes||""}" placeholder="${T[p.name]!==undefined ? R.fmtMin(T[p.name]).replace("'",",").replace(/,$/,"") : ""}" aria-label="Minutes fixées pour ${esc(p.name)}"></label>`; }).join("");
+  const minList = pres.map(p => { const i = S.squad.indexOf(p); return `<label class="minrow"><span>${p.pos.length && !p.pos.some(q => q !== "G") ? `<b class="gk-tag">GK</b>` : ""}${esc(p.name)}</span><input type="number" step="0.5" min="0" data-i="${i}" data-k="minutes" value="${p.minutes||""}" placeholder="${T[p.name]!==undefined ? R.fmtMin(T[p.name]).replace("'",",").replace(/,$/,"") : ""}" aria-label="Minutes fixées pour ${esc(p.name)}"></label>`; }).join("");
   const anyMin = S.squad.some(p => p.minutes);
   return `<div class="prep-h"><div style="min-width:0"><div class="prep-t">${esc(S.matchLabel || "Match sans nom")}</div><div class="muted">${esc(fmtDate(S.matchDate))} · ${esc(matchStatus(curMatchRec()))}</div></div><button class="btn small" id="cList">Mes matchs (${S.matches.length})</button></div>
   <div class="card steps-card">
@@ -1449,7 +1458,7 @@ function matchPrepTab(){
     ${step("time", 4, true, "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin && timeMode() !== "manual" ? " · minutes fixées" : ""),
       `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
       <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]}${timeMode() === "manual" || timeMode() === "notes" ? "" : " Laisse une case vide pour le calcul automatique (en gris)."}</p>
-      ${timeMode() === "manual" ? "" : (() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
+      ${timeMode() === "manual" || timeMode() === "notes" ? "" : (() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
       ${timeMode() === "manual" ? "" : `<div id="budget">${budgetLine()}</div><div class="mins">${minList}</div>`}`)}
     ${step("rules", 5, true, "Règles de rotation", `${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}` + (() => { const n = Array.from({length:S.rules.quarters}, (_, q) => perDiff(q).length ? 1 : 0).reduce((a, b) => a + b, 0); return n ? ` · ${n} ${halves() ? "mi-temps" : "quart" + (n > 1 ? "s" : "")} ${n > 1 ? "différent" + (halves() ? "es" : "s") : "différent" + (halves() ? "e" : "")}` : ""; })(),
       rulesBody())}
@@ -1463,7 +1472,9 @@ function planCardBody(){
   return `${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     ${S.plan && !preview && !S.plan.savedAt && Object.keys(S.plan.played || {}).some(n => !S.squad.some(p => p.name === n)) ? `<div class="warn" style="margin-top:10px">Un joueur du plan a été renommé ou supprimé. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     ${S.plan && !preview && !S.plan.manual && S.plan.rulesSig && S.plan.rulesSig !== rulesSig() && !matchStarted() ? `<div class="warn" style="margin-top:10px">Les règles ont changé depuis ce plan. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
-    <div class="row" style="margin-top:10px"><button class="btn primary${preview ? "" : " big"}" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go big" id="use">Utiliser pour le match</button>` : ""}</div>
+    ${(b => b ? `<div class="warn" style="margin-top:10px">${b.left > 0 ? `Il te reste ${R.fmtMin(b.left)} à distribuer` : `Tu dépasses de ${R.fmtMin(-b.left)}`} dans « Temps de jeu » : toutes les minutes doivent être données pour générer le plan.</div>` : "")(budgetBlock())}
+    ${(z => z.length ? `<div class="warn" style="margin-top:10px">${esc(z.join(", "))} ${z.length > 1 ? "sont" : "est"} dans la compo de départ mais à 0 minute : donne-${z.length > 1 ? "leur" : "lui"} des minutes ou change la compo.</div>` : "")(zeroStarters())}
+    <div class="row" style="margin-top:10px"><button class="btn primary${preview ? "" : " big"}" id="gen"${budgetBlock() || zeroStarters().length ? " disabled" : ""}>${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go big" id="use">Utiliser pour le match</button>` : ""}</div>
     <div id="genOut" style="margin-top:12px">${previewHtml()}</div>`;
 }
 const nicePos = w => String(w).replace(/le poste (\w+)/g, (m, q) => "le poste « " + posName(q) + " »");
