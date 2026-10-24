@@ -93,7 +93,7 @@ const adjInc = () => ({type:inc.type, player:inc.player, inP:inc.inP ?? null, po
 function adjAnswer(p){
   if (p?.to !== SID) return;
   clearTimeout(adjWait); adjWait = null; incBusy = false;
-  if (p.warnings && inc) { inc.pending = {warnings:p.warnings}; incMsg = ""; }
+  if (p.warnings && inc) { inc.pending = {warnings:p.warnings, ...(S.plan?.manual ? {fresh:p.warnings} : {})}; incMsg = ""; }
   else if (p.error) incMsg = p.error;
   else { inc = null; incMsg = ""; }
   render();
@@ -114,7 +114,7 @@ function coachAnswer(p){
     inc = {...p.inc, inP: p.inc.inP ?? undefined};
     doIncident();
     if (inc?.pending && p.force) applyPlan(inc.pending);
-    else if (inc?.pending) r = {warnings:adjWarnings(inc.pending.warnings)};
+    else if (inc?.pending) r = {warnings:adjWarnings(inc.pending.fresh || inc.pending.warnings)};
     else if (incMsg) r = {error:incMsg};
   }
   inc = mine === null ? null : mine; incMsg = mineMsg; incBusy = mineBusy;
