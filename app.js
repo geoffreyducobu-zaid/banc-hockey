@@ -1063,8 +1063,8 @@ function settingsView(){
   <div class="card grp">
     <div class="set"><div><b>Son des alertes</b><div class="muted">Sur iPhone, le bouton silencieux coupe le son.</div></div>
       <div class="row" style="flex-shrink:0">${segBtns("sound", [[true,"Oui"],[false,"Non"]])}<button class="btn small" id="testSound">Tester</button></div></div>
-    <div class="set"><div><b>Vibreur</b><div class="muted">${canVibrate ? "Le téléphone vibre avant chaque changement." : "Pas disponible sur iPhone : Apple ne laisse pas les apps web faire vibrer le téléphone."}</div></div>
-      ${canVibrate ? segBtns("vibrate", [[true,"Oui"],[false,"Non"]]) : ""}</div>
+    ${canVibrate ? `<div class="set"><div><b>Vibreur</b><div class="muted">Le téléphone vibre avant chaque changement.</div></div>
+      ${segBtns("vibrate", [[true,"Oui"],[false,"Non"]])}</div>` : ""}
     <div class="set"><div><b>Alerte avant un changement</b><div class="muted">En secondes.</div></div><input class="set-num" type="number" step="5" min="5" data-rule="alertSec" value="${S.rules.alertSec}" aria-label="Alerte avant un changement, en secondes"></div>
   </div>
   <div class="grp-t">Apparence</div>
@@ -1084,8 +1084,19 @@ function settingsView(){
       <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
       ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}`)}
   </div>`}
+  <div class="grp-t">Aide</div>
+  <div class="card grp">
+    <div class="set"><div><b>Signaler un souci</b><div class="muted">Un bug, quelque chose de pas clair, une idée : ça ouvre un mail déjà prêt.</div></div><a class="btn small" id="report" href="${esc(reportLink())}">Écrire</a></div>
+  </div>
   <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>
   <p class="muted" style="font-size:.8rem;margin:0 4px">${COPYRIGHT}</p>`;
+}
+// « Signaler un souci » : mail prérempli avec la version de l'app et le téléphone (rien sur les joueurs).
+const REPORT_TO = "contact@stickmate.be";
+function reportLink(){
+  const v = (document.querySelector('script[src*="app.js"]')?.getAttribute("src") || "").match(/v=(\d+)/)?.[1] || "?";
+  const body = `Ce que je faisais :\n\n\nCe qui s'est passé (ou ce qui n'est pas clair) :\n\n\n---\nStickMate version ${v}\n${navigator.userAgent}`;
+  return `mailto:${REPORT_TO}?subject=${encodeURIComponent("StickMate : un souci")}&body=${encodeURIComponent(body)}`;
 }
 function bindSettings(){
   const v = $("#view");
