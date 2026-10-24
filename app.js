@@ -118,7 +118,7 @@ function computeTargets(){
   P.forEach(x => { if (!x.field) eq[x.name] = byNotes[x.name]; }); // le gardien garde son calcul habituel
   return eq;
 }
-// Minutes de terrain à répartir (joueurs de champ) : total, déjà fixées, reste. Les 5 étoiles comptent pour tout le match en « Selon mes choix ».
+// Minutes de terrain à répartir (joueurs de champ) : total, déjà fixées, reste. Les 5 étoiles comptent pour tout le match en « Plan automatique ».
 function minBudget(){
   const END = S.rules.quarters * S.rules.qlen, ids = PRESETS[S.preset].map(p => p[0]), gk = ids[0];
   const field = present().filter(p => p.pos.some(q => q !== gk));
@@ -141,7 +141,7 @@ function budgetLine(){
 // "manual" (le coach écrit lui-même ses changements, sans règles).
 const timeMode = () => S.timeMode || "notes";
 const lineGroup = l => l === "def" ? "def" : l === "att" ? "att" : "mid";
-const TIME_MODES = [["notes","Selon mes choix"],["all","Égal pour tous"],["line","Égal par ligne"],["manual","Mes changements"]];
+const TIME_MODES = [["notes","Plan automatique"],["all","Égal pour tous"],["line","Égal par ligne"],["manual","Plan manuel"]];
 // En temps égal, les étoiles des joueurs de champ ne comptent pas (pas de joueur bloqué tout le match).
 const star = p => timeMode() === "notes" || !p.pos.some(q => q !== "G") ? +p.note : 0;
 function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); S.rules.maxStint = Math.max(+S.rules.maxDef, +S.rules.maxMid, +S.rules.maxAtt); }
@@ -357,7 +357,7 @@ function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Arr
 const INC = {bless:{label:"Blessure",icon:"🩹",d:0}, vert:{label:"Carton vert",icon:"🟩",d:2}, jaune:{label:"Carton jaune",icon:"🟨",d:5}, jaune10:{label:"Carton jaune",icon:"🟨",d:10}, rouge:{label:"Carton rouge",icon:"🟥",d:0}};
 const timedCard = t => t==="vert" || t==="jaune" || t==="jaune10";
 function eventsOf(){ return (S.plan && S.plan.events) || []; }
-// Annuler le dernier imprévu. « Mes changements » : on retire le dernier imprévu et la liste (même modifiée depuis) est rejouée.
+// Annuler le dernier imprévu. « Plan manuel » : on retire le dernier imprévu et la liste (même modifiée depuis) est rejouée.
 function undoIncident(){
   if (S.plan?.manual && eventsOf().length) {
     const last = eventsOf().slice(-1)[0];
@@ -415,7 +415,7 @@ function doIncident(){
   const T = Math.floor(matchT()*10)/10;
   const type = inc.type, p = inc.player, info = INC[type] || {d:0};
   const seg = segAt(S.plan, T);
-  // « Mes changements » : la liste du coach continue, rien n'est recalculé.
+  // « Plan manuel » : la liste du coach continue, rien n'est recalculé.
   if (S.plan.manual) {
     const evs = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, d:info.d, pos: seg.on[p] || null}];
     const res = manualPlan(evs), fresh = res.warnings.filter(w => !S.plan.warnings.includes(w));
@@ -1228,7 +1228,7 @@ function bindRules(v){
     S.rules = {...defaultRules(), ...keep}; rulesResetArmed = false; rulesQ = null; rulesChanged();
   });
 }
-/* ---------- Mes changements : plan écrit par le coach, sans règles ---------- */
+/* ---------- Plan manuel : plan écrit par le coach, sans règles ---------- */
 // S.manual (par match) = [{id, q, m, end, outs:[noms], ins:[noms], pos:[poste de chaque entrant]}] : quart q, minute m dans le quart
 // (end = fin du quart). Le moment est gardé par quart pour suivre un changement de durée des quarts ; t (minutes depuis le début) en découle.
 let mq = 1, mw = null, mView = 0; // quart affiché, changement en cours de saisie, moment du terrain consulté (s depuis le début du quart)
@@ -1400,7 +1400,7 @@ function bindManual(){
   $("#mUse")?.addEventListener("click", () => { if (matchStarted()) return; S.plan = manualPlan(); S.prevPlan = null; S.basePlan = null; preview = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = freshClock(); pushClock(); persist(); render(); });
   $("#mView")?.addEventListener("input", e => { mView = +e.target.value; const t = qa + mView / 60; $("#mPitch").innerHTML = manualPitch(t); $("#mViewT").textContent = R.fmtMin(mView / 60); });
 }
-// Avant le match, le plan « Mes changements » suit la compo, les présents et le format.
+// Avant le match, le plan « Plan manuel » suit la compo, les présents et le format.
 function mRefresh(){ if (!ADJ && S.plan?.manual && !S.plan.savedAt && !matchStarted()) { const p = manualPlan([]); if (JSON.stringify(p.segs) !== JSON.stringify(S.plan.segs) || JSON.stringify(p.warnings) !== JSON.stringify(S.plan.warnings) || p.fmt !== S.plan.fmt) { S.plan = p; persist(); } } }
 function matchPrepTab(){
   // Liste de changements active : le plan suit la compo et les présents tant que le match n'a pas commencé.
