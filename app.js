@@ -327,8 +327,9 @@ function bindMatches(){
 }
 // Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
 // Un match déjà fini et enregistré repart aussi de zéro : il sort de la saison et sera réenregistré à la fin.
-function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; if (S.plan?.manual) S.plan = manualPlan([]);
-  if (S.plan?.savedAt) { const at = S.plan.savedAt; delete S.plan.savedAt; unsaveSeason(at); } S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
+function resetMatch(){ const at = S.plan?.savedAt; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; if (S.plan?.manual) S.plan = manualPlan([]);
+  // (le plan d'avant les imprévus n'a pas la marque « enregistré » : on la lit avant de le remettre)
+  if (S.plan) delete S.plan.savedAt; if (at) unsaveSeason(at); S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
 function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Array.from({length:n}, () => [200,100]).flat()); } catch(e){} } if (!actx || !prefs.sound) return; try { for (let i=0;i<n;i++){ const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i*0.25; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.4,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18); o.start(t0); o.stop(t0+0.2);} } catch(e){} try{navigator.vibrate?.(200)}catch(e){} }
@@ -471,7 +472,7 @@ function incidentPanel(seg){
   if (inc.pending?.fresh) return `<div class="card incp"><h2>À savoir</h2>
     <p style="margin:0 0 8px">Avec cet imprévu, ces changements de ta liste ne sont plus possibles et seront sautés :</p>
     <div class="warn">${inc.pending.fresh.map(w => esc(w)).join("<br>")}</div>
-    <p class="muted" style="margin:8px 0 0;font-size:.92rem">Tu peux les remplacer ensuite dans la page Coach, partie « Plan de rotation ».</p>
+    <p class="muted" style="margin:8px 0 0;font-size:.92rem">${ADJ ? "Le coach peut les remplacer ensuite sur son téléphone." : "Tu peux les remplacer ensuite dans la page Coach, partie « Plan de rotation »."}</p>
     <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo">Valider</button><button class="btn" id="incBack">Revenir</button></div>
   </div>`;
   if (inc.pending) return `<div class="card incp"><h2>À vérifier</h2>
@@ -713,6 +714,7 @@ function changeLines(ch){
   return html;
 }
 function matchView(){
+  mRefresh();
   const plan = S.plan;
   if (!plan) return `<div class="card empty"><h2>Pas encore de plan</h2><p class="muted">Va dans la page Coach : coche les présents, choisis la compo, puis génère le plan de rotation.</p><button class="btn primary" id="goCoach">Aller à la page Coach</button></div>`;
   const fEnd = plan.segs[plan.segs.length - 1].b, END = S.rules.quarters * S.rules.qlen;
@@ -1208,9 +1210,28 @@ function bindRules(v){
   });
 }
 /* ---------- Mes changements : plan écrit par le coach, sans règles ---------- */
-// S.manual (par match) = [{id, t, outs:[noms], ins:[noms], pos:[poste de chaque entrant]}], t en minutes depuis le début du match.
+// S.manual (par match) = [{id, q, m, end, outs:[noms], ins:[noms], pos:[poste de chaque entrant]}] : quart q, minute m dans le quart
+// (end = fin du quart). Le moment est gardé par quart pour suivre un changement de durée des quarts ; t (minutes depuis le début) en découle.
 let mq = 1, mw = null, mView = 0; // quart affiché, changement en cours de saisie, moment du terrain consulté (s depuis le début du quart)
-const manualList = () => Array.isArray(S.manual) ? S.manual : (S.manual = []);
+const mRaw = () => Array.isArray(S.manual) ? S.manual : (S.manual = []);
+function mTime(c){
+  const ql = +S.rules.qlen, nq = +S.rules.quarters;
+  if (c.q == null) { let q = Math.floor(c.t / ql + 1e-6) + 1, m = c.t - (q - 1) * ql; if (m < 1e-6 && q > 1) { q--; c.end = true; m = 0; } c.q = q; c.m = m; c.end = !!c.end; }
+  if (c.q > nq || (c.end ? c.q >= nq : c.m >= ql - 1e-6)) return null;
+  return (c.q - 1) * ql + (c.end ? ql : c.m);
+}
+// Changements qui tiennent dans le format actuel (avec leur t), et ceux qui n'y tiennent plus.
+const manualList = () => mRaw().filter(c => (c.t = mTime(c)) != null);
+const manualLost = () => mRaw().filter(c => mTime(c) == null);
+// Compo de départ et joueurs du match. Figés dès que le match a commencé : changer la compo ou les présents
+// en cours de match (ou après) ne réécrit pas ce qui s'est déjà passé.
+function mBase(){
+  const f = S.plan?.manual && S.plan.start && (matchStarted() || S.plan.savedAt) ? S.plan.start : null;
+  if (f) return {on: {...f.on}, names: new Set(f.names)};
+  const names = new Set(present().map(p => p.name)), on = {};
+  Object.entries(S.lineup).forEach(([q, n]) => { if (n && names.has(n)) on[n] = q; });
+  return {on, names};
+}
 const sameOn = (x, y) => Object.keys(x).length === Object.keys(y).length && Object.keys(x).every(k => y[k] === x[k]);
 // Imprévus pris en compte par la liste (évènements du plan actif).
 const M_EV = ["bless", "retour", "rouge", "libre", "vert", "jaune", "jaune10"];
@@ -1219,8 +1240,7 @@ const mEvents = () => S.plan?.manual ? (S.plan.events || []) : [];
 // hors plan, le remplaçant reprend les changements prévus du joueur sorti (et inversement). Pendant un
 // carton, le poste du joueur sanctionné reste vide. Un changement devenu impossible est sauté.
 function manualState(t, events = mEvents()){
-  const names = new Set(present().map(p => p.name)), on = {}, bad = [], eff = {}, gone = new Set(), swaps = [], cards = [];
-  Object.entries(S.lineup).forEach(([q, n]) => { if (n && names.has(n)) on[n] = q; });
+  const {on, names} = mBase(), bad = [], eff = {}, gone = new Set(), swaps = [], cards = [], ids = PRESETS[S.preset].map(p => p[0]);
   const ren = n => swaps.reduce((x, [a, b]) => x === a ? b : x === b ? a : x, n);
   const items = [...manualList().map(c => ({t: c.t, c})), ...events.filter(e => M_EV.includes(e.type)).map(e => ({t: e.t, e}))]
     .sort((a, b) => a.t - b.t || (a.e ? 1 : 0) - (b.e ? 1 : 0));
@@ -1228,7 +1248,7 @@ function manualState(t, events = mEvents()){
     if (it.t > t + 1e-6) break;
     if (it.c) {
       const c = it.c, outs = c.outs.map(ren), ins = c.ins.map(ren); eff[c.id] = {outs, ins};
-      if (outs.length !== ins.length || outs.some(n => !(n in on)) || ins.some(n => n in on || gone.has(n) || !names.has(n))) { bad.push(c.id); continue; }
+      if (outs.length !== ins.length || c.pos.some(q => !ids.includes(q)) || outs.some(n => !(n in on)) || ins.some(n => n in on || gone.has(n) || !names.has(n))) { bad.push(c.id); continue; }
       outs.forEach(n => delete on[n]); ins.forEach((n, i) => on[n] = c.pos[i]);
       continue;
     }
@@ -1245,7 +1265,7 @@ function manualState(t, events = mEvents()){
   return {on, bad, eff};
 }
 function manualPlan(events = mEvents()){
-  const END = S.rules.quarters * S.rules.qlen, evs = events.filter(e => M_EV.includes(e.type));
+  const END = S.rules.quarters * S.rules.qlen, evs = events.filter(e => M_EV.includes(e.type)), base = mBase();
   const times = [...manualList().map(c => c.t), ...evs.map(e => e.t), ...evs.filter(e => timedCard(e.type)).map(e => e.t + e.d)];
   const pts = [0, ...new Set(times.filter(t => t > 1e-6 && t < END - 1e-6))].sort((a, b) => a - b);
   const segs = [];
@@ -1256,12 +1276,14 @@ function manualPlan(events = mEvents()){
     changes.push({t: segs[i].a, ins: Object.keys(B).filter(p => !(p in A)).map(p => [p, B[p]]), outs: Object.keys(A).filter(p => !(p in B)).map(p => [p, A[p]]), moves: Object.keys(B).filter(p => p in A && A[p] !== B[p]).map(p => [p, A[p], B[p]])});
   }
   const played = {}, intervals = {};
-  present().forEach(p => { played[p.name] = 0; intervals[p.name] = []; });
+  base.names.forEach(n => { played[n] = 0; intervals[n] = []; });
   segs.forEach(sg => Object.keys(sg.on).forEach(n => { played[n] = (played[n] || 0) + sg.b - sg.a; const L = (intervals[n] ||= []); if (L.length && Math.abs(L[L.length-1][1] - sg.a) < 1e-6) L[L.length-1][1] = sg.b; else L.push([sg.a, sg.b]); }));
   const st = manualState(END, events), warnings = [];
   if (Object.keys(segs[0].on).length < PRESETS[S.preset].length) warnings.push("La compo de départ n'est pas complète.");
   manualList().filter(c => st.bad.includes(c.id)).sort((a, b) => a.t - b.t).forEach(c => { const f = st.eff[c.id] || c; warnings.push(`${manualWhen(c.t, true)} : changement sauté (${f.ins.join(", ")} pour ${f.outs.join(", ")}), un joueur n'est plus sur le terrain, y est déjà ou ne peut plus jouer.`); });
-  return {segs, changes, played, targets: {...played}, intervals, warnings, events, score: 0, manual: true, timeMode: "manual", rulesSig: rulesSig(), fmt: fmtSig()};
+  const lost = manualLost().length;
+  if (lost) warnings.push(`${lost} changement${lost > 1 ? "s ne tiennent" : " ne tient"} plus dans le format du match (${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}) : ignoré${lost > 1 ? "s" : ""}.`);
+  return {start: {on: base.on, names: [...base.names]}, segs, changes, played, targets: {...played}, intervals, warnings, events, score: 0, manual: true, timeMode: "manual", rulesSig: rulesSig(), fmt: fmtSig()};
 }
 const mEndLab = () => halves() ? "Fin de la mi-temps" : "Fin du quart";
 function manualWhen(t, withQ){
@@ -1296,7 +1318,7 @@ function manualCard(){
     const t = mw.end ? qa + ql : qa + mw.m + mw.s / 60, tOk = (mw.end || (t > qa + 1e-6 && t < qa + ql - 1e-6)) && t > now + 1e-6;
     const st = tOk ? manualState(t).on : {};
     const field = PRESETS[S.preset].map(([id]) => Object.keys(st).find(n => st[n] === id)).filter(Boolean);
-    const bench = present().map(p => p.name).filter(n => !(n in st));
+    const bench = [...mBase().names].filter(n => !(n in st));
     const mins = Array.from({length: Math.floor(ql) + 1}, (_, k) => k), secs = Array.from({length: 60}, (_, k) => k);
     const when = `<div class="mstep"><b>1. Quand ?</b>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="msel"><select id="mMin" ${mw.end ? "disabled" : ""} aria-label="Minute">${mins.map(k => `<option value="${k}" ${k === mw.m ? "selected" : ""}>${k} min</option>`).join("")}</select></label>
@@ -1319,7 +1341,7 @@ function manualCard(){
   const tp = Object.keys(plan.played).filter(n => plan.played[n] > 0 || present().some(p => p.name === n)).sort((a, b) => plan.played[b] - plan.played[a]);
   return `${lock ? `<div class="warn" style="margin-top:10px">Ce match est terminé et enregistré.</div>` : started && active ? `<div class="muted" style="margin-top:10px;font-size:.92rem">Match en cours : tu peux encore modifier les changements à venir.</div>` : ""}
     ${lock || (started && active) ? "" : !active ? `<div class="warn" style="margin-top:10px;background:var(--chip);color:var(--ink)">${S.plan ? "Le plan actif n'est pas ta liste de changements." : "Pas encore de plan pour ce match."} <button class="btn go small" id="mUse" ${started ? "disabled" : ""}>Utiliser mes changements pour le match</button></div>` : `<div class="ok" style="margin-top:10px">Plan actif pour le match : tes changements, sans règles. ${visChanges(S.plan).length} moments de changement.</div>`}
-    ${plan.warnings.length ? `<div class="warn" style="margin-top:8px">${plan.warnings.map(w => esc(w)).join("<br>")}</div>` : ""}
+    ${plan.warnings.length ? `<div class="warn" style="margin-top:8px">${plan.warnings.map(w => esc(w)).join("<br>")}${manualLost().length && !lock ? ` <button class="btn small" id="mPurge">Effacer ces changements</button>` : ""}</div>` : ""}
     <div style="margin-top:12px">${tabs}</div>
     <div class="mlist">${rows}</div>
     ${lock ? "" : wiz || `<button class="btn primary big" id="mAdd" style="margin-top:10px;width:100%">+ Ajouter un changement</button>`}
@@ -1332,7 +1354,8 @@ function manualCard(){
 function bindManual(){
   const ql = +S.rules.qlen, qa = (Math.min(mq, S.rules.quarters) - 1) * ql;
   document.querySelectorAll("[data-mq]").forEach(b => b.addEventListener("click", () => { mq = +b.dataset.mq; mw = null; render(); }));
-  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", () => { S.manual = manualList().filter(c => c.id !== b.dataset.mdel); manualApply(); }));
+  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", () => { S.manual = mRaw().filter(c => c.id !== b.dataset.mdel); manualApply(); }));
+  $("#mPurge")?.addEventListener("click", () => { const lost = manualLost(); S.manual = mRaw().filter(c => !lost.includes(c)); manualApply(); });
   $("#mAdd")?.addEventListener("click", () => { const last = manualList().filter(c => c.t > qa && c.t < qa + ql).sort((a, b) => b.t - a.t)[0]; let m0 = last ? Math.min(Math.floor(ql), Math.floor(last.t - qa) + 2) : (mq === 1 ? 6 : 4); if (matchStarted() && matchT() >= qa && matchT() < qa + ql) m0 = Math.max(m0, Math.min(Math.floor(ql), Math.floor(matchT() - qa) + 1)); mw = {step: "when", m: m0, s: 0, end: false, outs: [], ins: [], pos: []}; render(); });
   $("#mCancel")?.addEventListener("click", () => { mw = null; render(); });
   $("#mMin")?.addEventListener("change", e => { mw.m = +e.target.value; mw.step = "when"; mw.outs = []; mw.ins = []; render(); });
@@ -1352,16 +1375,17 @@ function bindManual(){
     mw.pos[i] = sel.value; render();
   }));
   $("#mSave")?.addEventListener("click", () => {
-    const t = Math.round((mw.end ? qa + ql : qa + mw.m + mw.s / 60) * 3600) / 3600;
-    manualList().push({id: newId(), t, outs: mw.outs.slice(), ins: mw.ins.slice(), pos: mw.pos.slice()});
+    mRaw().push({id: newId(), q: Math.min(mq, S.rules.quarters), m: mw.end ? 0 : Math.round((mw.m + mw.s / 60) * 3600) / 3600, end: mw.end, outs: mw.outs.slice(), ins: mw.ins.slice(), pos: mw.pos.slice()});
     mw = null; manualApply();
   });
   $("#mUse")?.addEventListener("click", () => { if (matchStarted()) return; S.plan = manualPlan(); S.prevPlan = null; S.basePlan = null; preview = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = freshClock(); pushClock(); persist(); render(); });
   $("#mView")?.addEventListener("input", e => { mView = +e.target.value; const t = qa + mView / 60; $("#mPitch").innerHTML = manualPitch(t); $("#mViewT").textContent = R.fmtMin(mView / 60); });
 }
+// Avant le match, le plan « Mes changements » suit la compo, les présents et le format.
+function mRefresh(){ if (!ADJ && S.plan?.manual && !S.plan.savedAt && !matchStarted()) { const p = manualPlan([]); if (JSON.stringify(p.segs) !== JSON.stringify(S.plan.segs) || JSON.stringify(p.warnings) !== JSON.stringify(S.plan.warnings) || p.fmt !== S.plan.fmt) { S.plan = p; persist(); } } }
 function matchPrepTab(){
   // Liste de changements active : le plan suit la compo et les présents tant que le match n'a pas commencé.
-  if (timeMode() === "manual" && S.plan?.manual && !matchStarted()) { const p = manualPlan(); if (JSON.stringify(p.segs) !== JSON.stringify(S.plan.segs) || JSON.stringify(p.warnings) !== JSON.stringify(S.plan.warnings)) { S.plan = p; persist(); } }
+  mRefresh();
   const T = computeTargets();
   const pres = present(), ids = PRESETS[S.preset].map(p => p[0]);
   const filled = ids.filter(id => S.lineup[id] && pres.some(p => p.name === S.lineup[id])).length;
@@ -1412,6 +1436,15 @@ function previewHtml(){
   const tl = names.map(n => `<div class="tlr"><div>${esc(n)}</div><div class="trk">${plan.segs.map(s => s.on[n] ? `<i style="left:${s.a/END*100}%;width:${(s.b-s.a)/END*100}%;background:var(--${posMeta(s.on[n]).line})">${(s.b-s.a)>=2.5?esc(posShort(s.on[n])):""}</i>` : "").join("")}${Array.from({length:S.rules.quarters-1}, (_,k) => `<span class="q" style="left:${(k+1)/S.rules.quarters*100}%"></span>`).join("")}</div></div>`).join("");
   return `${tag}${modeTag}${warn}<div class="grid2" style="margin-top:12px"><div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Prévu</th><th>Visé</th><th>Écart</th></tr></thead><tbody>${rec}</tbody></table></div><div class="tl"><div class="tl-in">${tl}</div></div></div>`;
 }
+// Remplace un nom de joueur partout dans un objet (valeurs et clés), sans toucher aux textes.
+function renameIn(o, a, b){
+  if (!o || typeof o !== "object") return;
+  for (const k of Object.keys(o)) {
+    const v = o[k];
+    if (v === a) o[k] = b; else renameIn(v, a, b);
+    if (k === a && !Array.isArray(o)) { o[b] = o[k]; delete o[k]; }
+  }
+}
 function bindCoach(){
   const v = $("#view");
   bindTeams();
@@ -1424,6 +1457,8 @@ function bindCoach(){
       if (!nn || S.squad.some(x => x !== p && x.name.trim().toLowerCase() === nn.toLowerCase())) { squadMsg = nn ? `Il y a déjà un joueur « ${nn} ». Ajoute l'initiale du nom, ex. « ${nn} D. ».` : "Le nom ne peut pas être vide."; render(); return; }
       squadMsg = ""; p.name = nn;
       for (const q in S.lineup) if (S.lineup[q] === old) S.lineup[q] = nn;
+      // Les changements écrits par le coach, les plans et les compos des autres matchs suivent aussi le nouveau nom.
+      [S.manual, S.plan, S.prevPlan, S.basePlan, ...S.matches.filter(m => m.id !== S.curMatch)].forEach(o => renameIn(o, old, nn));
       preview = null; persist(); render(); return;
     }
     if (k === "present") p.present = el.checked;
