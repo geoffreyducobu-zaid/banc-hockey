@@ -108,7 +108,7 @@ function coachAnswer(p){
   let r = {ok:true};
   incMsg = "";
   if (p.kind === "reset") resetMatch();
-  else if (p.kind === "undo") { if (S.prevPlan) { S.plan = S.prevPlan; S.prevPlan = null; syncDone(); pushClock(); persist(); } }
+  else if (p.kind === "undo") undoIncident();
   else if (p.kind === "heal") { endInjury(p.player, p.catchUp !== false); if (incMsg) r = {error:incMsg}; }
   else if (p.kind === "incident" && p.inc) {
     inc = {...p.inc, inP: p.inc.inP ?? undefined};
