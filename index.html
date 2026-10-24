@@ -293,6 +293,20 @@ tr.absent td:not(:first-child){opacity:.45}
 .chk.on{background:var(--club);color:var(--onclub)}
 .chk input{margin:0;accent-color:var(--onclub)}
 .mins{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.mlist{display:flex;flex-direction:column;margin-top:8px}
+.mrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--rule)}
+.mrow:first-child{border-top:0}
+.mrow .mt{min-width:64px;font:800 1.05rem var(--display)}
+.mrow .mw{flex:1;min-width:0}.mrow .i span,.mrow .o span{display:inline-block;white-space:nowrap;margin-right:12px}.mrow .i{color:var(--in);font-weight:700}.mrow .o{color:var(--out)}
+.mrow.bad{opacity:.7}.mrow.bad .mt{color:var(--warn)}
+.mwiz{margin-top:12px;border:2px solid var(--club);border-radius:14px;padding:12px 14px}
+.mwiz-t{font:800 .8rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--clubink);margin-bottom:6px}
+.mstep{padding-top:10px}.mstep + .mstep{border-top:1px solid var(--rule);margin-top:10px}
+.msel select{border:1px solid var(--rule);border-radius:10px;padding:10px 12px;background:var(--bg);font-weight:700;min-height:44px}
+#mEnd[aria-pressed="true"],.inc-players .btn[aria-pressed="true"]{background:var(--club);color:var(--onclub)}
+.mdet{margin-top:14px;border-top:1px solid var(--rule);padding-top:10px}
+.mdet summary{font-weight:700;cursor:pointer;min-height:32px}
+.minrow b{font-weight:700}
 .minrow{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--bg);border-radius:10px;padding:6px 8px 6px 10px;font-size:.92rem;font-weight:600}
 .minrow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .minrow input{width:64px;border:1px solid var(--rule);border-radius:8px;padding:5px 6px;background:var(--paper);text-align:right}
@@ -365,12 +379,12 @@ tr.absent td:not(:first-child){opacity:.45}
   <button data-tab="settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Réglages</span></button>
 </nav>
 
-<script src="vendor/supabase.js?v=29"></script>
-<script src="config.js?v=29"></script>
-<script src="rotation.js?v=29"></script>
-<script src="vendor/qrcode.js?v=29"></script>
-<script src="cloud.js?v=29"></script>
-<script src="live.js?v=29"></script>
-<script src="app.js?v=29"></script>
+<script src="vendor/supabase.js?v=30"></script>
+<script src="config.js?v=30"></script>
+<script src="rotation.js?v=30"></script>
+<script src="vendor/qrcode.js?v=30"></script>
+<script src="cloud.js?v=30"></script>
+<script src="live.js?v=30"></script>
+<script src="app.js?v=30"></script>
 
 </body></html>

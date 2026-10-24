@@ -109,7 +109,7 @@ function computeTargets(){
   const gk = ids[0];
   const P = present().map(p => ({name:p.name, note:+p.note, override: p.minutes ? +p.minutes : 0, field: p.pos.some(q => q !== gk)}));
   const tm = timeMode(), byNotes = R.targetsFromNotes(P, ids.length - 1, END).targets;
-  if (tm === "notes") return byNotes;
+  if (tm === "notes" || tm === "manual") return byNotes;
   // Égal pour tous : un seul groupe. Égal par ligne : la ligne du premier poste du joueur.
   const groupOf = id => tm === "all" ? "all" : lineGroup(posMeta(id).line);
   const slots = {}; ids.slice(1).forEach(id => slots[groupOf(id)] = (slots[groupOf(id)] || 0) + 1);
@@ -118,10 +118,11 @@ function computeTargets(){
   P.forEach(x => { if (!x.field) eq[x.name] = byNotes[x.name]; }); // le gardien garde son calcul habituel
   return eq;
 }
-// Temps de jeu du match : "notes" (étoiles et minutes fixées), "all" (égal pour tous), "line" (égal par ligne).
+// Temps de jeu du match : "notes" (étoiles et minutes fixées), "all" (égal pour tous), "line" (égal par ligne),
+// "manual" (le coach écrit lui-même ses changements, sans règles).
 const timeMode = () => S.timeMode || "notes";
 const lineGroup = l => l === "def" ? "def" : l === "att" ? "att" : "mid";
-const TIME_MODES = [["notes","Selon mes choix"],["all","Égal pour tous"],["line","Égal par ligne"]];
+const TIME_MODES = [["notes","Selon mes choix"],["all","Égal pour tous"],["line","Égal par ligne"],["manual","Mes changements"]];
 // En temps égal, les étoiles des joueurs de champ ne comptent pas (pas de joueur bloqué tout le match).
 const star = p => timeMode() === "notes" || !p.pos.some(q => q !== "G") ? +p.note : 0;
 function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); S.rules.maxStint = Math.max(+S.rules.maxDef, +S.rules.maxMid, +S.rules.maxAtt); }
@@ -179,7 +180,7 @@ function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; 
 /* ---------- plusieurs matchs ---------- */
 // Le match ouvert vit dans S (plan, compo, feuille, présents) et le chrono dans C.
 // Les autres matchs sont rangés dans S.matches ; on échange en changeant de match.
-const MATCH_KEYS = ["matchLabel","matchDate","preset","timeMode","lineup","plan","prevPlan","basePlan","sheet"];
+const MATCH_KEYS = ["matchLabel","matchDate","preset","timeMode","lineup","plan","prevPlan","basePlan","sheet","manual"];
 const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 let matchesOpen = false, newMatchForm = false, delPin = null;
@@ -264,7 +265,7 @@ function openMatch(id, store = true){
   const r = S.matches.find(m => m.id === id); if (!r) return;
   S.curMatch = id;
   S.matchLabel = r.matchLabel || ""; S.matchDate = r.matchDate || "";
-  S.preset = r.preset || S.preset; S.timeMode = r.timeMode || "notes"; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null;
+  S.preset = r.preset || S.preset; S.timeMode = r.timeMode || "notes"; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null; S.manual = r.manual || [];
   S.sheet = r.sheet || {us:[], them:[], pc:0, log:[]};
   if (Array.isArray(r.present)) S.squad.forEach(p => p.present = r.present.includes(p.name));
   C = r.clock || freshClock(); C.running = false;
@@ -273,7 +274,7 @@ function openMatch(id, store = true){
 function createMatch(opp, date, home){
   if (S.curMatch) storeCur();
   const us = S.profile?.club || S.teamName || "Nous";
-  const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, timeMode:timeMode(), lineup:{...S.lineup}, plan:null, prevPlan:null, basePlan:null, sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
+  const r = {id:newId(), matchLabel: opp ? (home ? `${us} – ${opp}` : `${opp} – ${us}`) : "", matchDate: date || "", preset:S.preset, timeMode:timeMode(), lineup:{...S.lineup}, plan:null, prevPlan:null, basePlan:null, manual:[], sheet:{us:[], them:[], pc:0, log:[]}, present: S.squad.map(p => p.name), clock: freshClock()};
   S.matches.push(r); openMatch(r.id, false);
 }
 function removeMatch(id){
@@ -1023,7 +1024,7 @@ function pinView(title = "Page coach", text = "Entre ton code de verrouillage po
 function bindPin(onOk){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; if (onOk) onOk(); render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
 let coachTab = "match", coachStep = null, squadMsg = "";
-const TIME_HELP = {notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui."};
+const TIME_HELP = {notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui.", manual:"Tu écris toi-même tous les changements du match, quart par quart, dans « Plan de rotation » plus bas. L'app ne calcule rien et n'applique pas les règles."};
 // Une étape de la préparation du match : une ligne avec son état, qui s'ouvre au toucher.
 function step(id, n, done, title, summary, body){
   const open = coachStep === id;
@@ -1180,7 +1181,135 @@ function bindRules(v){
     S.rules = {...defaultRules(), ...keep}; rulesResetArmed = false; rulesQ = null; rulesChanged();
   });
 }
+/* ---------- Mes changements : plan écrit par le coach, sans règles ---------- */
+// S.manual (par match) = [{id, t, outs:[noms], ins:[noms], pos:[poste de chaque entrant]}], t en minutes depuis le début du match.
+let mq = 1, mw = null, mView = 0; // quart affiché, changement en cours de saisie, moment du terrain consulté (s depuis le début du quart)
+const manualList = () => Array.isArray(S.manual) ? S.manual : (S.manual = []);
+const sameOn = (x, y) => Object.keys(x).length === Object.keys(y).length && Object.keys(x).every(k => y[k] === x[k]);
+// Terrain (nom -> poste) après les changements jusqu'à t inclus ; un changement devenu impossible est ignoré.
+function manualState(t){
+  const names = new Set(present().map(p => p.name)), on = {}, bad = [];
+  Object.entries(S.lineup).forEach(([q, n]) => { if (n && names.has(n)) on[n] = q; });
+  manualList().slice().sort((a, b) => a.t - b.t).forEach(c => {
+    if (c.t > t + 1e-6) return;
+    if (c.outs.length !== c.ins.length || c.outs.some(n => !(n in on)) || c.ins.some(n => n in on || !names.has(n))) { bad.push(c.id); return; }
+    c.outs.forEach(n => delete on[n]); c.ins.forEach((n, i) => on[n] = c.pos[i]);
+  });
+  return {on, bad};
+}
+function manualPlan(){
+  const END = S.rules.quarters * S.rules.qlen;
+  const pts = [0, ...new Set(manualList().map(c => c.t).filter(t => t > 1e-6 && t < END - 1e-6))].sort((a, b) => a - b);
+  const segs = [];
+  pts.forEach((a, i) => { const b = pts[i + 1] ?? END, on = manualState(a).on, L = segs[segs.length - 1]; if (L && sameOn(L.on, on)) L.b = b; else segs.push({a, b, on}); });
+  const changes = [];
+  for (let i = 1; i < segs.length; i++) {
+    const A = segs[i-1].on, B = segs[i].on;
+    changes.push({t: segs[i].a, ins: Object.keys(B).filter(p => !(p in A)).map(p => [p, B[p]]), outs: Object.keys(A).filter(p => !(p in B)).map(p => [p, A[p]]), moves: Object.keys(B).filter(p => p in A && A[p] !== B[p]).map(p => [p, A[p], B[p]])});
+  }
+  const played = {}, intervals = {};
+  present().forEach(p => { played[p.name] = 0; intervals[p.name] = []; });
+  segs.forEach(sg => Object.keys(sg.on).forEach(n => { played[n] = (played[n] || 0) + sg.b - sg.a; const L = (intervals[n] ||= []); if (L.length && Math.abs(L[L.length-1][1] - sg.a) < 1e-6) L[L.length-1][1] = sg.b; else L.push([sg.a, sg.b]); }));
+  const bad = manualState(END).bad, warnings = [];
+  if (Object.keys(segs[0].on).length < PRESETS[S.preset].length) warnings.push("La compo de départ n'est pas complète.");
+  manualList().filter(c => bad.includes(c.id)).sort((a, b) => a.t - b.t).forEach(c => warnings.push(`${manualWhen(c.t, true)} : changement ignoré (${c.ins.join(", ")} pour ${c.outs.join(", ")}), un joueur n'est plus sur le terrain ou y est déjà.`));
+  return {segs, changes, played, targets: {...played}, intervals, warnings, events: [], score: 0, manual: true, timeMode: "manual", rulesSig: rulesSig(), fmt: fmtSig()};
+}
+const mEndLab = () => halves() ? "Fin de la mi-temps" : "Fin du quart";
+function manualWhen(t, withQ){
+  const ql = +S.rules.qlen, q = Math.min(S.rules.quarters, Math.floor(t / ql + 1e-6) + 1), m = t - (q - 1) * ql;
+  if (m < 1e-6 && q > 1) return halves() ? "Mi-temps" : `Fin du ${pShort(q - 1)}`;
+  return (withQ ? pShort(q) + " · " : "") + R.fmtMin(m);
+}
+// Le plan actif suit la liste tant que le match n'a pas commencé.
+function manualApply(){
+  if (S.plan?.manual && !matchStarted()) { S.plan = manualPlan(); S.prevPlan = null; S.basePlan = null; preview = null; pushClock(); }
+  persist(); render();
+}
+function manualPitch(t){
+  const on = manualState(t).on, who = q => Object.keys(on).find(n => on[n] === q) || "Vide";
+  return pitchLines() + PRESETS[S.preset].map(([id, label, line, x, y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who(id))}</span></div>`).join("");
+}
+function manualCard(){
+  const ql = +S.rules.qlen, nq = S.rules.quarters, q = Math.min(mq, nq), qa = (q - 1) * ql, lock = matchStarted();
+  const active = !!S.plan?.manual, plan = active ? S.plan : manualPlan();
+  const tabs = `<div class="seg seg-full" role="group" aria-label="${halves() ? "Mi-temps" : "Quart"}">${Array.from({length: nq}, (_, k) => `<button data-mq="${k + 1}" aria-pressed="${k + 1 === q}">${esc(pShort(k + 1))}</button>`).join("")}</div>`;
+  const badIds = manualState(nq * ql).bad;
+  const rows = manualList().filter(c => c.t > qa + 1e-6 && c.t <= qa + ql + 1e-6).sort((a, b) => a.t - b.t).map(c => `<div class="mrow${badIds.includes(c.id) ? " bad" : ""}">
+      <div class="mt">${esc(c.t >= qa + ql - 1e-6 ? mEndLab() : R.fmtMin(c.t - qa))}</div>
+      <div class="mw"><div class="i">${c.ins.map((n, i) => `<span>↑ ${esc(n)} ${pill(c.pos[i])}</span>`).join("")}</div><div class="o">${c.outs.map(n => `<span>↓ ${esc(n)}</span>`).join("")}</div>${badIds.includes(c.id) ? `<div class="note">Impossible à ce moment : il est ignoré.</div>` : ""}</div>
+      ${lock ? "" : `<button class="btn small" data-mdel="${c.id}" aria-label="Supprimer ce changement">✕</button>`}</div>`).join("") || `<p class="muted" style="margin:6px 0">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
+  let wiz = "";
+  if (mw && !lock) {
+    const t = mw.end ? qa + ql : qa + mw.m + mw.s / 60, tOk = mw.end || (t > qa + 1e-6 && t < qa + ql - 1e-6);
+    const st = tOk ? manualState(t).on : {};
+    const field = PRESETS[S.preset].map(([id]) => Object.keys(st).find(n => st[n] === id)).filter(Boolean);
+    const bench = present().map(p => p.name).filter(n => !(n in st));
+    const mins = Array.from({length: Math.floor(ql) + 1}, (_, k) => k), secs = Array.from({length: 60}, (_, k) => k);
+    const when = `<div class="mstep"><b>1. Quand ?</b>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="msel"><select id="mMin" ${mw.end ? "disabled" : ""} aria-label="Minute">${mins.map(k => `<option value="${k}" ${k === mw.m ? "selected" : ""}>${k} min</option>`).join("")}</select></label>
+      <label class="msel"><select id="mSec" ${mw.end ? "disabled" : ""} aria-label="Seconde">${secs.map(k => `<option value="${k}" ${k === mw.s ? "selected" : ""}>${String(k).padStart(2, "0")} s</option>`).join("")}</select></label>
+      ${q < nq ? `<button class="btn small" id="mEnd" aria-pressed="${mw.end}">${mEndLab()}</button>` : ""}</div>
+      ${tOk ? "" : `<div class="warn" style="margin-top:8px">Choisis un moment entre 0'01 et ${R.fmtMin(ql)} du quart${q < nq ? `, ou « ${mEndLab()} »` : ""}.</div>`}</div>`;
+    let body = "";
+    if (tOk && mw.step === "when") body = `<button class="btn primary" id="mNext" style="margin-top:10px">OK</button>`;
+    if (tOk && mw.step !== "when") body += `<div class="mstep"><b>2. Qui sort ?</b> <span class="muted">${mw.outs.length ? mw.outs.length + " choisi" + (mw.outs.length > 1 ? "s" : "") : "touche un ou plusieurs joueurs"}</span>
+      <div class="inc-players" style="margin-top:6px">${field.map(n => `<button class="btn" data-mout="${esc(n)}" aria-pressed="${mw.outs.includes(n)}" ${mw.step !== "out" ? "disabled" : ""}>${esc(n)} ${pill(st[n])}</button>`).join("")}</div>
+      ${mw.step === "out" ? `<button class="btn primary" id="mOutOk" style="margin-top:10px" ${mw.outs.length ? "" : "disabled"}>OK</button>` : ""}</div>`;
+    if (tOk && (mw.step === "in" || mw.step === "pos")) body += `<div class="mstep"><b>3. Qui entre sur le terrain ?</b> <span class="muted">${mw.ins.length} sur ${mw.outs.length}</span>
+      <div class="inc-players" style="margin-top:6px">${bench.map(n => `<button class="btn" data-min="${esc(n)}" aria-pressed="${mw.ins.includes(n)}" ${mw.step !== "in" || (!mw.ins.includes(n) && mw.ins.length >= mw.outs.length) ? "disabled" : ""}>${esc(n)}</button>`).join("") || `<span class="muted">Personne sur le banc.</span>`}</div>
+      ${mw.step === "in" ? `<button class="btn primary" id="mInOk" style="margin-top:10px" ${mw.ins.length === mw.outs.length ? "" : "disabled"}>OK</button>` : ""}</div>`;
+    if (tOk && mw.step === "pos") body += `<div class="mstep"><b>4. Postes</b>${mw.ins.map((n, i) => `<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><span><b>${esc(n)}</b> joue</span>${mw.ins.length > 1 ? `<select data-mpos="${i}" aria-label="Poste de ${esc(n)}" style="border:1px solid var(--rule);border-radius:8px;padding:6px 8px;background:var(--bg)">${mw.outs.map(o => `<option value="${st[o]}" ${mw.pos[i] === st[o] ? "selected" : ""}>${esc(posName(st[o]))} (à la place de ${esc(o)})</option>`).join("")}</select>` : `<span>${pill(mw.pos[i])} ${esc(posName(mw.pos[i]))} (à la place de ${esc(mw.outs[0])})</span>`}</div>`).join("")}
+      <button class="btn go big" id="mSave" style="margin-top:12px">Valider le changement</button></div>`;
+    wiz = `<div class="mwiz"><div class="mwiz-t">Nouveau changement · ${esc(pShort(q))}${tOk ? " · " + esc(mw.end ? mEndLab().toLowerCase() : R.fmtMin(t - qa)) : ""}</div>${when}${body}<button class="btn" id="mCancel" style="margin-top:10px">Annuler</button></div>`;
+  }
+  const vt = qa + Math.min(mView, ql * 60) / 60;
+  const tp = Object.keys(plan.played).filter(n => plan.played[n] > 0 || present().some(p => p.name === n)).sort((a, b) => plan.played[b] - plan.played[a]);
+  return `${lock ? `<div class="warn" style="margin-top:10px">Le match a commencé : pour changer en direct, utilise « Hors plan » dans l'écran Match. Remets le match à 0 pour modifier ta liste.</div>` : ""}
+    ${lock ? "" : !active ? `<div class="warn" style="margin-top:10px;background:var(--chip);color:var(--ink)">${S.plan ? "Le plan actif n'est pas ta liste de changements." : "Pas encore de plan pour ce match."} <button class="btn go small" id="mUse" ${lock ? "disabled" : ""}>Utiliser mes changements pour le match</button></div>` : `<div class="ok" style="margin-top:10px">Plan actif pour le match : tes changements, sans règles. ${visChanges(S.plan).length} moments de changement.</div>`}
+    ${plan.warnings.length ? `<div class="warn" style="margin-top:8px">${plan.warnings.map(w => esc(w)).join("<br>")}</div>` : ""}
+    <div style="margin-top:12px">${tabs}</div>
+    <div class="mlist">${rows}</div>
+    ${lock ? "" : wiz || `<button class="btn primary big" id="mAdd" style="margin-top:10px;width:100%">+ Ajouter un changement</button>`}
+    <details class="mdet" ${mView ? "open" : ""}><summary>Voir le terrain à un moment du ${esc(pShort(q))}</summary>
+      <div class="row" style="gap:10px;margin:10px 0"><input type="range" id="mView" min="0" max="${Math.round(ql * 60)}" step="5" value="${Math.min(mView, Math.round(ql * 60))}" style="flex:1" aria-label="Moment du quart"><b id="mViewT" style="min-width:56px;text-align:right">${esc(R.fmtMin(vt - qa))}</b></div>
+      <div class="pitch" id="mPitch" style="max-width:440px;margin:0 auto">${manualPitch(vt)}</div></details>
+    <details class="mdet"><summary>Temps de jeu total</summary>
+      <div class="mins" style="margin-top:8px">${tp.map(n => `<div class="minrow"><span>${esc(n)}</span><b>${esc(R.fmtMin(plan.played[n] || 0))}</b></div>`).join("")}</div></details>`;
+}
+function bindManual(){
+  const ql = +S.rules.qlen, qa = (Math.min(mq, S.rules.quarters) - 1) * ql;
+  document.querySelectorAll("[data-mq]").forEach(b => b.addEventListener("click", () => { mq = +b.dataset.mq; mw = null; render(); }));
+  document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", () => { S.manual = manualList().filter(c => c.id !== b.dataset.mdel); manualApply(); }));
+  $("#mAdd")?.addEventListener("click", () => { const last = manualList().filter(c => c.t > qa && c.t < qa + ql).sort((a, b) => b.t - a.t)[0]; const m0 = last ? Math.min(Math.floor(ql), Math.floor(last.t - qa) + 2) : (mq === 1 ? 6 : 4); mw = {step: "when", m: m0, s: 0, end: false, outs: [], ins: [], pos: []}; render(); });
+  $("#mCancel")?.addEventListener("click", () => { mw = null; render(); });
+  $("#mMin")?.addEventListener("change", e => { mw.m = +e.target.value; mw.step = "when"; mw.outs = []; mw.ins = []; render(); });
+  $("#mSec")?.addEventListener("change", e => { mw.s = +e.target.value; mw.step = "when"; mw.outs = []; mw.ins = []; render(); });
+  $("#mEnd")?.addEventListener("click", () => { mw.end = !mw.end; mw.step = "when"; mw.outs = []; mw.ins = []; render(); });
+  $("#mNext")?.addEventListener("click", () => { mw.step = "out"; render(); });
+  document.querySelectorAll("[data-mout]").forEach(b => b.addEventListener("click", () => { const n = b.dataset.mout; mw.outs = mw.outs.includes(n) ? mw.outs.filter(x => x !== n) : [...mw.outs, n]; render(); }));
+  $("#mOutOk")?.addEventListener("click", () => { mw.step = "in"; mw.ins = []; render(); });
+  document.querySelectorAll("[data-min]").forEach(b => b.addEventListener("click", () => { const n = b.dataset.min; mw.ins = mw.ins.includes(n) ? mw.ins.filter(x => x !== n) : [...mw.ins, n]; render(); }));
+  $("#mInOk")?.addEventListener("click", () => {
+    const t = mw.end ? qa + ql : qa + mw.m + mw.s / 60, on = manualState(t).on;
+    mw.pos = mw.outs.map(o => on[o]); mw.step = "pos"; render();
+  });
+  document.querySelectorAll("[data-mpos]").forEach(sel => sel.addEventListener("change", () => {
+    const i = +sel.dataset.mpos, j = mw.pos.indexOf(sel.value);
+    if (j >= 0 && j !== i) mw.pos[j] = mw.pos[i]; // deux entrants ne prennent pas le même poste : ils échangent
+    mw.pos[i] = sel.value; render();
+  }));
+  $("#mSave")?.addEventListener("click", () => {
+    const t = Math.round((mw.end ? qa + ql : qa + mw.m + mw.s / 60) * 3600) / 3600;
+    manualList().push({id: newId(), t, outs: mw.outs.slice(), ins: mw.ins.slice(), pos: mw.pos.slice()});
+    mw = null; manualApply();
+  });
+  $("#mUse")?.addEventListener("click", () => { if (matchStarted()) return; S.plan = manualPlan(); S.prevPlan = null; S.basePlan = null; preview = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = freshClock(); pushClock(); persist(); render(); });
+  $("#mView")?.addEventListener("input", e => { mView = +e.target.value; const t = qa + mView / 60; $("#mPitch").innerHTML = manualPitch(t); $("#mViewT").textContent = R.fmtMin(mView / 60); });
+}
 function matchPrepTab(){
+  // Liste de changements active : le plan suit la compo et les présents tant que le match n'a pas commencé.
+  if (timeMode() === "manual" && S.plan?.manual && !matchStarted()) { const p = manualPlan(); if (JSON.stringify(p.segs) !== JSON.stringify(S.plan.segs) || JSON.stringify(p.warnings) !== JSON.stringify(S.plan.warnings)) { S.plan = p; persist(); } }
   const T = computeTargets();
   const pres = present(), ids = PRESETS[S.preset].map(p => p[0]);
   const filled = ids.filter(id => S.lineup[id] && pres.some(p => p.name === S.lineup[id])).length;
@@ -1197,22 +1326,25 @@ function matchPrepTab(){
     ${step("compo", 3, filled === ids.length, "Compo de départ", `${S.preset} · ${filled} postes sur ${ids.length}`,
       `<div class="row" style="margin-bottom:12px"><label for="preset" class="muted">Système</label><select id="preset" style="border:1px solid var(--rule);border-radius:8px;padding:6px 10px;background:var(--bg)">${Object.keys(PRESETS).map(k=>`<option ${k===S.preset?"selected":""}>${k}</option>`).join("")}</select></div>
       <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>`)}
-    ${step("time", 4, true, "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin ? " · minutes fixées" : ""),
+    ${step("time", 4, true, "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin && timeMode() !== "manual" ? " · minutes fixées" : ""),
       `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
-      <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]} Laisse une case vide pour le calcul automatique (en gris).</p>
-      ${(() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
-      <div class="mins">${minList}</div>`)}
+      <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]}${timeMode() === "manual" ? "" : " Laisse une case vide pour le calcul automatique (en gris)."}</p>
+      ${timeMode() === "manual" ? "" : (() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
+      ${timeMode() === "manual" ? "" : `<div class="mins">${minList}</div>`}`)}
     ${step("rules", 5, true, "Règles de rotation", `${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}` + (() => { const n = Array.from({length:S.rules.quarters}, (_, q) => perDiff(q).length ? 1 : 0).reduce((a, b) => a + b, 0); return n ? ` · ${n} ${halves() ? "mi-temps" : "quart" + (n > 1 ? "s" : "")} ${n > 1 ? "différent" + (halves() ? "es" : "s") : "différent" + (halves() ? "e" : "")}` : ""; })(),
       rulesBody())}
   </div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Plan de rotation</h2>${S.plan ? `<button class="btn small" id="pdfB">📄 Plan B (PDF)</button>` : ""}</div>
     ${pdfMsg && S.plan ? `<div class="muted" style="margin-top:6px;font-size:.9rem">${esc(pdfMsg)}</div>` : ""}
-    ${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
-    ${S.plan && !preview && !S.plan.savedAt && Object.keys(S.plan.played || {}).some(n => !S.squad.some(p => p.name === n)) ? `<div class="warn" style="margin-top:10px">Un joueur du plan a été renommé ou supprimé. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
-    ${S.plan && !preview && S.plan.rulesSig && S.plan.rulesSig !== rulesSig() && !matchStarted() ? `<div class="warn" style="margin-top:10px">Les règles ont changé depuis ce plan. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
-    <div class="row" style="margin-top:10px"><button class="btn primary${preview ? "" : " big"}" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go big" id="use">Utiliser pour le match</button>` : ""}</div>
-    <div id="genOut" style="margin-top:12px">${previewHtml()}</div>
+    ${timeMode() === "manual" ? manualCard() : planCardBody()}
   </div>`;
+}
+function planCardBody(){
+  return `${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
+    ${S.plan && !preview && !S.plan.savedAt && Object.keys(S.plan.played || {}).some(n => !S.squad.some(p => p.name === n)) ? `<div class="warn" style="margin-top:10px">Un joueur du plan a été renommé ou supprimé. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
+    ${S.plan && !preview && !S.plan.manual && S.plan.rulesSig && S.plan.rulesSig !== rulesSig() && !matchStarted() ? `<div class="warn" style="margin-top:10px">Les règles ont changé depuis ce plan. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
+    <div class="row" style="margin-top:10px"><button class="btn primary${preview ? "" : " big"}" id="gen">${preview ? "Autre version" : "Générer le plan"}</button>${preview && !preview.error ? `<button class="btn go big" id="use">Utiliser pour le match</button>` : ""}</div>
+    <div id="genOut" style="margin-top:12px">${previewHtml()}</div>`;
 }
 const nicePos = w => String(w).replace(/le poste (\w+)/g, (m, q) => "le poste « " + posName(q) + " »");
 function previewHtml(){
@@ -1231,6 +1363,7 @@ function previewHtml(){
 function bindCoach(){
   const v = $("#view");
   bindTeams();
+  bindManual();
   v.querySelectorAll("[data-i]").forEach(el => el.addEventListener("change", () => {
     const p = S.squad[+el.dataset.i], k = el.dataset.k;
     if (k === "name") {
