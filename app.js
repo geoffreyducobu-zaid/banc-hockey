@@ -172,7 +172,7 @@ function generate(seed){
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
   // Plan automatique : un joueur à 0 minute reste sur le banc tout le match.
-  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: p.maxStint ? +p.maxStint : maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
+  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -404,7 +404,7 @@ function replanBase(T){
   const Tg = computeTargets();
   // Plan automatique : un joueur à 0 minute reste hors du plan, sauf s'il a joué ou si le coach le fait entrer.
   const sits = x => S.plan.timeMode === "notes" && !(S.plan.targets?.[x.name] > 0) && !(playedUntil(S.plan, x.name, T) > 0) && !eventsOf().some(e => e.inP === x.name) && inc?.inP !== x.name;
-  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: x.maxStint ? +x.maxStint : maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
@@ -1131,14 +1131,13 @@ function squadTab(){
   const rows = S.squad.map((p,i) => `<tr>
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
     <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
-    <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="${p.pos.length ? maxStintOf(p) : "—"}" aria-label="Passage max"></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
   return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes joueurs (${S.squad.length})</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Corners : D donneur, B bloqueur.</p>
     ${squadMsg ? `<div class="warn" style="margin-bottom:10px">${esc(squadMsg)}</div>` : ""}
-    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
   </div>`;
 }
@@ -1248,7 +1247,7 @@ function rulesBody(){
   <div class="card grp rules-all">
     <div class="set"><div><b>Minimum avant de sortir</b><div class="muted">Un joueur reste au moins ce temps sur le terrain, selon sa ligne (son 1er poste).</div></div>
       <div class="rline">${[["minDef","Défense"],["minMid","Milieu"],["minAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Minimum avant de sortir, ${l.toLowerCase()}"></label>`).join("")}</div></div>
-    <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. La pause entre deux quarts remet ce compteur à zéro. Tu peux le changer pour un joueur dans Effectif.</div></div>
+    <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. ${halves() ? "La pause de la mi-temps remet" : "La pause entre deux quarts remet"} ce compteur à zéro.</div></div>
       <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
     ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
@@ -1479,7 +1478,7 @@ function matchPrepTab(){
   </div>`;
 }
 function planCardBody(){
-  return `${S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
+  return `${S.plan?.manual && !preview && timeMode() !== "manual" ? `<div class="warn" style="margin-top:10px"><b>Pour le match, c'est encore ta liste « ${esc(TIME_MODES.find(m => m[0] === "manual")[1])} » qui sert</b> (${(n => n ? `${n} moment${n > 1 ? "s" : ""} de changement` : "aucun changement")(visChanges(S.plan).length)}). ${matchStarted() ? "Le match a commencé : elle reste jusqu'à la fin ou jusqu'à « Match à 0 »." : "Pour la remplacer, génère un plan puis touche « Utiliser pour le match »."}</div>` : S.plan && !preview && (S.plan.timeMode || "notes") !== timeMode() ? `<div class="warn" style="margin-top:10px">Le plan actif a été fait avec « ${esc(TIME_MODES.find(m => m[0] === (S.plan.timeMode || "notes"))[1])} ». Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     ${S.plan && !preview && !S.plan.savedAt && Object.keys(S.plan.played || {}).some(n => !S.squad.some(p => p.name === n)) ? `<div class="warn" style="margin-top:10px">Un joueur du plan a été renommé ou supprimé. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     ${S.plan && !preview && !S.plan.manual && S.plan.rulesSig && S.plan.rulesSig !== rulesSig() && !matchStarted() ? `<div class="warn" style="margin-top:10px">Les règles ont changé depuis ce plan. Génère un nouveau plan puis touche « Utiliser pour le match ».</div>` : ""}
     ${(b => b ? `<div class="warn" style="margin-top:10px">${b.left > 0 ? `Il te reste ${R.fmtMin(b.left)} à distribuer` : `Tu dépasses de ${R.fmtMin(-b.left)}`} dans « Temps de jeu » : toutes les minutes doivent être données pour générer le plan.</div>` : "")(budgetBlock())}
@@ -1529,11 +1528,13 @@ function bindCoach(){
       for (const q in S.lineup) if (S.lineup[q] === old) S.lineup[q] = nn;
       // Les changements écrits par le coach, les plans et les compos des autres matchs suivent aussi le nouveau nom.
       [S.manual, S.plan, S.prevPlan, S.basePlan, ...S.matches.filter(m => m.id !== S.curMatch)].forEach(o => renameIn(o, old, nn));
+      // La saison aussi : sinon ses stats seraient coupées en deux (ancien et nouveau nom).
+      try { const L = localSeasonL(); renameIn(L, old, nn); localStorage.setItem("banc-season", JSON.stringify(L)); season = null; markChanged(); } catch(e){}
       preview = null; persist(); render(); return;
     }
     if (k === "present") p.present = el.checked;
     else if (k === "pos") p.pos = el.value.split(/[ ,;/]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
-    else if (k === "minutes" || k === "maxStint") p[k] = el.value ? +el.value : 0;
+    else if (k === "minutes") p[k] = el.value ? +el.value : 0;
     else p[k] = el.value;
     preview = null; persist(); render();
   }));
@@ -1541,7 +1542,7 @@ function bindCoach(){
   v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; p.pos = p.pos.filter(q => q !== b.dataset.q); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
-  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],present:true,minutes:0,maxStint:0}); persist(); render(); });
+  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],present:true,minutes:0}); persist(); render(); });
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
   $("#preset")?.addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
   v.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => { coachTab = b.dataset.ctab; render(); }));
