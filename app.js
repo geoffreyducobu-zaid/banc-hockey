@@ -71,7 +71,9 @@ const fmtClock = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.flo
 const fmtQ = t => { const ql = S.rules.qlen; const q = Math.min(S.rules.quarters, Math.floor(t/ql + 1e-6) + 1); const m = t - (q-1)*ql; return {q, m, label: R.fmtMin(m)}; };
 
 /* ---------- storage ---------- */
-function applyData(v){ v = JSON.parse(JSON.stringify(v)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules: v.rules ? {...defaultRules(), ...R.migrateRules(v.rules)} : defaultRules()}; }
+// Les notes sur 5 ont disparu (2026-10-24) : un joueur de champ noté 5 sans minutes fixées jouait tout le match, il garde ce temps en minutes.
+function dropStars(squad, r){ const END = (+r?.quarters || 4) * (+r?.qlen || 17.5); (squad || []).forEach(p => { if (p.note === undefined) return; if (+p.note >= 5 && !(+p.minutes > 0) && (p.pos || []).some(q => q !== "G")) p.minutes = END; delete p.note; }); }
+function applyData(v){ v = JSON.parse(JSON.stringify(v)); dropStars(v.squad, v.rules); (v.teams || []).forEach(t => dropStars(t.squad, t.rules)); (v.squad||[]).forEach(p => { if (p.roles) p.roles = [...new Set(p.roles.map(r => ({I:"D",S:"B"})[r] || r).filter(r => r==="D"||r==="B"))]; }); S = {...S, ...v, rules: v.rules ? {...defaultRules(), ...R.migrateRules(v.rules)} : defaultRules()}; }
 function loadLocal(){ let v = null; try { v = JSON.parse(localStorage.getItem("banc-state") || "null"); } catch(e){} applyData(v || SEED); }
 // L'adjoint ne touche jamais aux données du téléphone : il ne fait qu'afficher le match du coach.
 function saveLocal(){ if (ADJ) return; try { localStorage.setItem("banc-state", JSON.stringify(S)); } catch(e){} }
@@ -107,7 +109,7 @@ function computeTargets(){
   const END = S.rules.quarters * S.rules.qlen;
   const ids = PRESETS[S.preset].map(p => p[0]);
   const gk = ids[0];
-  const P = present().map(p => ({name:p.name, note:+p.note, override: p.minutes ? +p.minutes : 0, field: p.pos.some(q => q !== gk)}));
+  const P = present().map(p => ({name:p.name, note: isMainGk(p) ? 5 : 3, override: p.minutes ? +p.minutes : 0, field: p.pos.some(q => q !== gk)}));
   const tm = timeMode(), byNotes = R.targetsFromNotes(P, ids.length - 1, END).targets;
   if (tm === "notes" || tm === "manual") return byNotes;
   // Égal pour tous : un seul groupe. Égal par ligne : la ligne du premier poste du joueur.
@@ -118,13 +120,13 @@ function computeTargets(){
   P.forEach(x => { if (!x.field) eq[x.name] = byNotes[x.name]; }); // le gardien garde son calcul habituel
   return eq;
 }
-// Minutes de terrain à répartir (joueurs de champ) : total, déjà fixées, reste. Les 5 étoiles comptent pour tout le match en « Plan automatique ».
+// Minutes de terrain à répartir (joueurs de champ) : total, déjà fixées, reste.
 function minBudget(){
   const END = S.rules.quarters * S.rules.qlen, ids = PRESETS[S.preset].map(p => p[0]), gk = ids[0];
   const field = present().filter(p => p.pos.some(q => q !== gk));
-  const fixedOf = p => +p.minutes > 0 ? Math.min(END, +p.minutes) : timeMode() === "notes" && +p.note >= 5 ? END : 0;
+  const fixedOf = p => +p.minutes > 0 ? Math.min(END, +p.minutes) : 0;
   const total = (ids.length - 1) * END, used = field.reduce((a, p) => a + fixedOf(p), 0);
-  return {END, slots: ids.length - 1, total, left: total - used, auto: field.filter(p => !fixedOf(p)).length, stars: timeMode() === "notes" && field.some(p => !(+p.minutes > 0) && +p.note >= 5)};
+  return {END, slots: ids.length - 1, total, left: total - used, auto: field.filter(p => !fixedOf(p)).length};
 }
 function budgetLine(){
   const b = minBudget(), used = b.total - b.left, x = R.fmtMin(Math.abs(b.left)), pct = Math.min(100, used / b.total * 100);
@@ -135,15 +137,17 @@ function budgetLine(){
     : b.auto ? `Elles iront automatiquement aux ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes (chiffres en gris).` : "Ajoute des minutes ou vide une case pour le calcul automatique.";
   return `<div class="budget${cls}"><div class="budget-big">${big}</div>
     <div class="budget-bar"><i style="width:${pct}%"></i></div>
-    <div class="budget-sub">${R.fmtMin(used)} distribuées sur ${R.fmtMin(b.total)} (${b.slots} postes × ${R.fmtMin(b.END)})${b.stars ? ", les 5 étoiles comptent pour tout le match" : ""}${note ? `. ${note}` : ""}</div></div>`;
+    <div class="budget-sub">${R.fmtMin(used)} distribuées sur ${R.fmtMin(b.total)} (${b.slots} postes × ${R.fmtMin(b.END)})${note ? `. ${note}` : ""}</div></div>`;
 }
 // Temps de jeu du match : "notes" (étoiles et minutes fixées), "all" (égal pour tous), "line" (égal par ligne),
 // "manual" (le coach écrit lui-même ses changements, sans règles).
 const timeMode = () => S.timeMode || "notes";
 const lineGroup = l => l === "def" ? "def" : l === "att" ? "att" : "mid";
 const TIME_MODES = [["notes","Plan automatique"],["all","Égal pour tous"],["line","Égal par ligne"],["manual","Plan manuel"]];
-// En temps égal, les étoiles des joueurs de champ ne comptent pas (pas de joueur bloqué tout le match).
-const star = p => timeMode() === "notes" || !p.pos.some(q => q !== "G") ? +p.note : 0;
+// Un joueur de champ fixé à la durée du match joue tout le match d'un bloc.
+// Le gardien de la compo de départ (s'il ne joue que gardien) garde le but tout le match, sauf minutes fixées.
+const isMainGk = p => S.lineup.G === p.name && !p.pos.some(q => q !== "G") && !(+p.minutes > 0);
+const fullMatch = p => isMainGk(p) || (+p.minutes >= S.rules.quarters * S.rules.qlen - 1e-6 && p.pos.some(q => q !== "G"));
 function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); S.rules.maxStint = Math.max(+S.rules.maxDef, +S.rules.maxMid, +S.rules.maxAtt); }
 // Maximum d'affilée selon la ligne du 1er poste (le gardien garde le maximum général)
 function maxStintOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? +S.rules.maxDef : (l === "dm" || l === "mid") ? +S.rules.maxMid : l === "att" ? +S.rules.maxAtt : +S.rules.maxStint; }
@@ -151,7 +155,7 @@ function generate(seed){
   syncMinStint();
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
-  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: (star(p) >= 5 && !p.minutes), oneBlock: star(p) >= 5, maxStint: p.maxStint ? +p.maxStint : maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
+  const players = present().map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: p.maxStint ? +p.maxStint : maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -381,7 +385,7 @@ function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).m
 function replanBase(T){
   const positions = PRESETS[S.preset].map(x => ({id:x[0], gk:x[2]==="gk"}));
   const Tg = computeTargets();
-  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked:(star(x)>=5 && !x.minutes), oneBlock: star(x)>=5, maxStint: x.maxStint ? +x.maxStint : maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const players = present().map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: x.maxStint ? +x.maxStint : maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
@@ -630,17 +634,37 @@ async function deleteMatch(id){
   } catch(e){}
   season = null; loadSeason();
 }
+// Notes sur 10 données après le match (match.ratings), visibles seulement dans la page Coach.
+let rateId = null;
+function setRating(id, name, val){
+  try {
+    const L = JSON.parse(localStorage.getItem("banc-season") || "[]"), rec = L.find(x => x.id === id); if (!rec) return;
+    rec.ratings ||= {}; if (val) rec.ratings[name] = +val; else delete rec.ratings[name];
+    localStorage.setItem("banc-season", JSON.stringify(L)); markChanged();
+    const m = season?.find(x => x.id === id); if (m) m.ratings = {...rec.ratings};
+  } catch(e){}
+}
+function ratingCard(){
+  const m = season?.find(x => x.id === rateId); if (!m) return "";
+  const names = Object.keys(m.minutes || {}).filter(n => m.minutes[n] > 0).sort((a, b) => a.localeCompare(b, "fr", {numeric:true}));
+  const rows = names.map(n => `<label class="minrow"><span>${esc(n)}</span><select data-rate="${esc(n)}" aria-label="Note de ${esc(n)}"><option value="">—</option>${[1,2,3,4,5,6,7,8,9,10].map(v => `<option ${m.ratings?.[n] === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>`).join("");
+  return `<div class="card rate-card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Notes du match</h2><button class="btn small" id="rateClose">Fermer</button></div>
+    <p class="muted" style="margin:4px 0 10px;font-size:.9rem">${esc([m.date, m.label].filter(Boolean).join(" · "))}${m.us !== undefined ? ` · ${m.us}–${m.them}` : ""}. Une note sur 10 pour chaque joueur qui a joué. Elle est gardée dans ta saison et n'apparaît que dans la page Coach.</p>
+    ${rows ? `<div class="mins">${rows}</div>` : `<p class="muted">Personne n'a joué dans ce match.</p>`}</div>`;
+}
 function seasonHtml(){
   if (season === null) { loadSeason(); return `<p class="muted">Chargement…</p>`; }
   if (!season.length) return `<p class="muted">Aucun match enregistré. À la fin d'un match, touche « Enregistrer le match dans la saison » (onglet Match ou ci-dessus).</p>`;
   const stat = {};
-  season.forEach(m => { Object.entries(m.minutes||{}).forEach(([n,v]) => { const s = stat[n] ||= {n:0,tot:0,dev:0,g:0}; s.n++; s.tot += v; s.dev += v - (m.targets?.[n] ?? v); }); (m.scorers||[]).forEach(n => { (stat[n] ||= {n:0,tot:0,dev:0,g:0}).g++; }); });
+  const blank = () => ({n:0,tot:0,dev:0,g:0,rn:0,rt:0,cv:0,cj:0,cr:0});
+  season.forEach(m => { Object.entries(m.minutes||{}).forEach(([n,v]) => { const s = stat[n] ||= blank(); s.n++; s.tot += v; s.dev += v - (m.targets?.[n] ?? v); }); (m.scorers||[]).forEach(n => { (stat[n] ||= blank()).g++; }); Object.entries(m.ratings||{}).forEach(([n,v]) => { const s = stat[n] ||= blank(); s.rn++; s.rt += v; }); (m.cards||[]).forEach(c => { const k = c.type === "vert" ? "cv" : c.type === "rouge" ? "cr" : c.type === "jaune" || c.type === "jaune10" ? "cj" : ""; if (k && c.player) (stat[c.player] ||= blank())[k]++; }); });
   const rows = Object.entries(stat).sort((a,b)=>b[1].tot-a[1].tot).map(([n,s]) => {
-    const sug = s.dev <= -8 ? `<span class="i">+0,5 conseillé</span>` : s.dev >= 8 ? `<span class="o">−0,5 conseillé</span>` : `<span class="muted">—</span>`;
-    return `<tr><td>${esc(n)}</td><td>${s.n}</td><td>${s.g||""}</td><td>${R.fmtMin(s.tot)}</td><td>${R.fmtMin(s.tot/s.n)}</td><td class="dev" style="color:${Math.abs(s.dev)<8?"var(--in)":"var(--out)"}">${s.dev>=0?"+":"−"}${R.fmtMin(Math.abs(s.dev))}</td><td>${sug}</td></tr>`; }).join("");
-  const list = season.map(m => `<span class="mchip">${esc(m.date)}${m.label?` · ${esc(m.label)}`:""}${m.us!==undefined?` · <b>${m.us}–${m.them}</b>`:""} <button class="x" data-delm="${esc(m.id)}" aria-label="Supprimer ce match">✕</button></span>`).join("");
-  return `<div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Matchs</th><th>Buts</th><th>Total</th><th>Moyenne</th><th>Écart cumulé</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="muted" style="font-size:.85rem;margin:10px 0 6px">Écart cumulé = minutes jouées moins minutes visées, sur tous les matchs. Les cartes comptent comme du temps hors du terrain.</p><div class="mlist">${list}</div>`;
+    const sug = s.rn ? `<b>${String(Math.round(s.rt / s.rn * 10) / 10).replace(".", ",")}</b><span class="muted">/10</span>` : `<span class="muted">—</span>`;
+    const cards = [["cv","g"],["cj","y"],["cr","r"]].filter(([k]) => s[k]).map(([k,c]) => `<span class="cardn ${c}">${s[k]}</span>`).join("");
+    return `<tr><td>${esc(n)}</td><td>${s.n}</td><td>${s.g||""}</td><td>${cards}</td><td>${R.fmtMin(s.tot)}</td><td>${R.fmtMin(s.tot/s.n)}</td><td class="dev" style="color:${Math.abs(s.dev)<8?"var(--in)":"var(--out)"}">${s.dev>=0?"+":"−"}${R.fmtMin(Math.abs(s.dev))}</td><td>${sug}</td></tr>`; }).join("");
+  const list = season.map(m => `<span class="mchip"><button class="rate-b" data-ratem="${esc(m.id)}" aria-pressed="${rateId === m.id}" title="Noter les joueurs">${Object.keys(m.ratings || {}).length ? "★" : "☆"} Noter</button>${esc(m.date)}${m.label?` · ${esc(m.label)}`:""}${m.us!==undefined?` · <b>${m.us}–${m.them}</b>`:""} <button class="x" data-delm="${esc(m.id)}" aria-label="Supprimer ce match">✕</button></span>`).join("");
+  return `<div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Matchs</th><th>Buts</th><th>Cartes</th><th>Total</th><th>Moyenne</th><th>Écart cumulé</th><th>Note moy.</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted" style="font-size:.85rem;margin:10px 0 6px">Écart cumulé = minutes jouées moins minutes visées, sur tous les matchs. Les cartes comptent comme du temps hors du terrain. Touche « Noter » sur un match pour noter tes joueurs sur 10.</p><div class="mlist">${list}</div>`;
 }
 
 /* ---------- rendering ---------- */
@@ -744,7 +768,7 @@ function matchView(){
   const qEndT = C.q*ql;
   let alertHtml;
   const matchOver = atEnd && C.q >= S.rules.quarters;
-  if (!next) alertHtml = `<div class="alert calm"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver && !plan.savedAt ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
+  if (!next) alertHtml = `<div class="alert calm"><div class="alert-title">${matchOver ? "Fin du match" : "Plus de changement prévu"}</div>${matchOver ? (plan.savedAt ? `<div class="ok">Match enregistré dans la saison ✓</div>${ADJ ? "" : `<button class="btn big primary" id="goRate" style="margin-top:8px">Noter les joueurs</button>`}` : ADJ ? "" : `<button class="btn big primary" id="saveMatch">Enregistrer le match dans la saison</button>`) : `<div class="muted">Plus aucun changement jusqu'à la fin.</div>`}${seasonMsg && matchOver && !plan.savedAt ? `<div class="muted">${esc(seasonMsg)}</div>` : ""}</div>`;
   else {
     const isBreakChange = Math.abs(next.t - qEndT) < 1e-6 && C.q < S.rules.quarters;
     const secs = (next.t - t) * 60;
@@ -852,6 +876,8 @@ function bindMatch(){
   document.querySelectorAll("[data-mtab]").forEach(b => b.addEventListener("click", () => { matchTab = b.dataset.mtab; render(); }));
   $("#farOff")?.addEventListener("click", () => setFar(false));
   $("#saveMatch")?.addEventListener("click", saveMatch);
+  // Les notes se donnent dans la page Coach (protégée par le code), jamais sur l'écran du match.
+  $("#goRate")?.addEventListener("click", () => { rateId = String(S.plan.savedAt); coachTab = "season"; goTo("coach"); setTimeout(() => $(".rate-card")?.scrollIntoView({block:"start"}), 50); });
   $("#incOpen")?.addEventListener("click", () => { inc = {type:null, player:null}; incMsg = ""; render(); });
   $("#incCancel")?.addEventListener("click", () => { inc = null; render(); });
   $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed && ADJ) adjAsk("undo"); else if (this.dataset.armed) { undoIncident(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
@@ -1071,7 +1097,7 @@ function pinView(title = "Page coach", text = "Entre ton code de verrouillage po
 function bindPin(onOk){ const go = () => { if ($("#pinIn").value === S.pin) { coachOK = true; if (onOk) onOk(); render(); } else { $("#pinErr").textContent = "Code incorrect, réessaie."; } }; $("#pinGo").addEventListener("click", go); $("#pinIn").addEventListener("keydown", e => { if (e.key==="Enter") go(); }); digitsOnly(); $("#pinIn").addEventListener("input", e => { if (e.target.value === S.pin) go(); }); if (mode === "coach") $("#pinIn").focus(); }
 
 let coachTab = "match", coachStep = null, squadMsg = "";
-const TIME_HELP = {notes:"Calculé à partir des notes et des minutes fixées.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui.", manual:"Tu écris toi-même tous les changements du match, quart par quart, dans « Plan de rotation » plus bas. L'app ne calcule rien et n'applique pas les règles."};
+const TIME_HELP = {notes:"Tu donnes à chaque joueur ses minutes et l'app fait le plan. Une case vide prend une part égale des minutes qui restent.", all:"Tous les joueurs de champ ont le même temps. Les notes ne comptent pas, les minutes fixées oui.", line:"Chaque ligne (défense, milieu, attaque) partage son temps à égalité. La ligne d'un joueur = celle de son 1er poste. Les notes ne comptent pas, les minutes fixées oui.", manual:"Tu écris toi-même tous les changements du match, quart par quart, dans « Plan de rotation » plus bas. L'app ne calcule rien et n'applique pas les règles."};
 // Une étape de la préparation du match : une ligne avec son état, qui s'ouvre au toucher.
 function step(id, n, done, title, summary, body){
   const open = coachStep === id;
@@ -1085,16 +1111,15 @@ function coachView(){
 function squadTab(){
   const rows = S.squad.map((p,i) => `<tr>
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
-    <td><select data-i="${i}" data-k="note" aria-label="Note">${[2,2.5,3,3.5,4,4.5,5].map(n=>`<option ${+p.note===n?"selected":""}>${n}</option>`).join("")}</select></td>
     <td><div class="posed">${p.pos.map((q,k) => `<button class="pchip ${posMeta(q).line}" data-rmpos="${i}" data-q="${esc(q)}" title="Retirer ${esc(posName(q))}">${k+1}. ${esc(posShort(q))} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${PRESETS[S.preset].filter(x => !p.pos.includes(x[0])).map(x => `<option value="${x[0]}">${esc(x[1])}</option>`).join("")}</select></div></td>
     <td><input type="number" step="1" min="0" data-i="${i}" data-k="maxStint" value="${p.maxStint||""}" placeholder="${p.pos.length ? maxStintOf(p) : "—"}" aria-label="Passage max"></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
   return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes joueurs (${S.squad.length})</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
-    <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Note 5 = tout le match. Corners : D donneur, B bloqueur.</p>
+    <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Corners : D donneur, B bloqueur.</p>
     ${squadMsg ? `<div class="warn" style="margin-bottom:10px">${esc(squadMsg)}</div>` : ""}
-    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Note</th><th>Postes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes</th><th>Passage max</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
   </div>`;
 }
@@ -1103,7 +1128,7 @@ function seasonTab(){
     <div class="row">${S.plan && !S.plan.savedAt ? `<button class="btn primary" id="saveMatchC">Enregistrer le match en cours</button>` : ""}</div></div>
     ${seasonMsg ? `<div class="ok" style="margin-top:8px">${esc(seasonMsg)}</div>` : ""}
     <div style="margin-top:12px">${seasonHtml()}</div>
-  </div>`;
+  </div>${ratingCard()}`;
 }
 
 /* ---------- règles de rotation ---------- */
@@ -1423,7 +1448,7 @@ function matchPrepTab(){
       <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>`)}
     ${step("time", 4, true, "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin && timeMode() !== "manual" ? " · minutes fixées" : ""),
       `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
-      <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]}${timeMode() === "manual" ? "" : " Laisse une case vide pour le calcul automatique (en gris)."}</p>
+      <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]}${timeMode() === "manual" || timeMode() === "notes" ? "" : " Laisse une case vide pour le calcul automatique (en gris)."}</p>
       ${timeMode() === "manual" ? "" : (() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
       ${timeMode() === "manual" ? "" : `<div id="budget">${budgetLine()}</div><div class="mins">${minList}</div>`}`)}
     ${step("rules", 5, true, "Règles de rotation", `${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}` + (() => { const n = Array.from({length:S.rules.quarters}, (_, q) => perDiff(q).length ? 1 : 0).reduce((a, b) => a + b, 0); return n ? ` · ${n} ${halves() ? "mi-temps" : "quart" + (n > 1 ? "s" : "")} ${n > 1 ? "différent" + (halves() ? "es" : "s") : "différent" + (halves() ? "e" : "")}` : ""; })(),
@@ -1487,7 +1512,6 @@ function bindCoach(){
     }
     if (k === "present") p.present = el.checked;
     else if (k === "pos") p.pos = el.value.split(/[ ,;/]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
-    else if (k === "note") p.note = +el.value;
     else if (k === "minutes" || k === "maxStint") p[k] = el.value ? +el.value : 0;
     else p[k] = el.value;
     preview = null; persist(); render();
@@ -1496,7 +1520,7 @@ function bindCoach(){
   v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; p.pos = p.pos.filter(q => q !== b.dataset.q); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
-  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],note:3,present:true,minutes:0,maxStint:0}); persist(); render(); });
+  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],present:true,minutes:0,maxStint:0}); persist(); render(); });
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
   $("#preset")?.addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
   v.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => { coachTab = b.dataset.ctab; render(); }));
@@ -1510,6 +1534,9 @@ function bindCoach(){
   $("#saveMatchC")?.addEventListener("click", saveMatch);
   document.querySelectorAll("[data-tmode]").forEach(b => b.addEventListener("click", () => { S.timeMode = b.dataset.tmode; preview = null; persist(); render(); }));
   $("#cList")?.addEventListener("click", () => { matchesOpen = true; goTo("match"); });
+  document.querySelectorAll("[data-ratem]").forEach(b => b.addEventListener("click", () => { rateId = rateId === b.dataset.ratem ? null : b.dataset.ratem; render(); if (rateId) $(".rate-card")?.scrollIntoView({behavior:"smooth", block:"start"}); }));
+  document.querySelectorAll("[data-rate]").forEach(el => el.addEventListener("change", () => { setRating(rateId, el.dataset.rate, el.value); render(); }));
+  $("#rateClose")?.addEventListener("click", () => { rateId = null; render(); });
   document.querySelectorAll("[data-delm]").forEach(b => b.addEventListener("click", () => { if (b.dataset.armed) deleteMatch(b.dataset.delm); else { b.dataset.armed = 1; b.textContent = "Sûr ?"; } }));
   $("#gen")?.addEventListener("click", () => { const b = $("#gen"); b.disabled = true; b.textContent = "Calcul…"; setTimeout(() => { preview = generate(Date.now() % 100000 + (seedN++)); render(); }, 30); });
   $("#use")?.addEventListener("click", () => { S.plan = preview; preview = null; S.prevPlan = null; S.basePlan = null; S.sheet = {us:[], them:[], pc:0, log:[]}; C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; pushClock(); persist(); render(); });
