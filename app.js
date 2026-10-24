@@ -327,7 +327,7 @@ function bindMatches(){
 }
 // Match à 0 : on oublie aussi les imprévus et on revient au plan d'avant le premier imprévu.
 // Un match déjà fini et enregistré repart aussi de zéro : il sort de la saison et sera réenregistré à la fin.
-function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null;
+function resetMatch(){ C = {q:1,elapsed:0,running:false,startedAt:0,done:[]}; S.sheet = {us:[], them:[], pc:0, log:[]}; if (S.basePlan) S.plan = S.basePlan; S.basePlan = null; if (S.plan?.manual) S.plan = manualPlan([]);
   if (S.plan?.savedAt) { const at = S.plan.savedAt; delete S.plan.savedAt; unsaveSeason(at); } S.prevPlan = null; inc = null; incBusy = false; incMsg = ""; lastAlertKey = ""; persist(); pushClock(); render(); }
 let actx = null;
 function unlockAudio(){ try { actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume?.(); } catch(e){} }
@@ -337,6 +337,15 @@ function beep(n){ if (prefs.vibrate && canVibrate) { try { navigator.vibrate(Arr
 const INC = {bless:{label:"Blessure",icon:"🩹",d:0}, vert:{label:"Carton vert",icon:"🟩",d:2}, jaune:{label:"Carton jaune",icon:"🟨",d:5}, jaune10:{label:"Carton jaune",icon:"🟨",d:10}, rouge:{label:"Carton rouge",icon:"🟥",d:0}};
 const timedCard = t => t==="vert" || t==="jaune" || t==="jaune10";
 function eventsOf(){ return (S.plan && S.plan.events) || []; }
+// Annuler le dernier imprévu. « Mes changements » : on retire le dernier imprévu et la liste (même modifiée depuis) est rejouée.
+function undoIncident(){
+  if (S.plan?.manual && eventsOf().length) {
+    const last = eventsOf().slice(-1)[0];
+    const evs = eventsOf().slice(0, -1).map(e => last.type === "retour" && e.type === "bless" && e.player === last.player && e.back === last.t ? (({back, ...r}) => r)(e) : e);
+    S.plan = manualPlan(evs); S.prevPlan = evs.length ? S.plan : null;
+  } else if (S.prevPlan) { S.plan = S.prevPlan; S.prevPlan = null; }
+  syncDone(); pushClock(); persist();
+}
 function outForGood(){ return eventsOf().filter(e => (e.type==="bless" && e.back === undefined) || e.type==="rouge").map(e => e.player); }
 // Minutes jouées par un joueur jusqu'à t dans le plan.
 function playedUntil(plan, n, t){ return plan.segs.reduce((a, s) => a + (n in s.on ? Math.max(0, Math.min(s.b, t) - s.a) : 0), 0); }
@@ -363,6 +372,10 @@ function applyPlan(res){ ["timeMode", "rulesSig", "fmt"].forEach(k => { if (S.pl
 function endInjury(n, catchUp = true){
   healAsk = null;
   const T = Math.floor(matchT()*10)/10;
+  if (S.plan?.manual) {
+    const evs = [...eventsOf().map(e => e.type==="bless" && e.player===n && e.back === undefined ? {...e, back:T} : e), {t:T, type:"retour", player:n}];
+    applyPlan(manualPlan(evs)); return;
+  }
   const o = replanBase(T); o.out = o.out.filter(x => x !== n);
   const ev = eventsOf().find(e => e.type==="bless" && e.player===n && e.back === undefined);
   if (!catchUp) {
@@ -382,6 +395,13 @@ function doIncident(){
   const T = Math.floor(matchT()*10)/10;
   const type = inc.type, p = inc.player, info = INC[type] || {d:0};
   const seg = segAt(S.plan, T);
+  // « Mes changements » : la liste du coach continue, rien n'est recalculé.
+  if (S.plan.manual) {
+    const evs = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, d:info.d, pos: seg.on[p] || null}];
+    const res = manualPlan(evs), fresh = res.warnings.filter(w => !S.plan.warnings.includes(w));
+    if (fresh.length) { res.fresh = fresh; inc.pending = res; incBusy = false; render(); return; }
+    applyPlan(res); return;
+  }
   const o = replanBase(T);
   let extra = null, res0 = null;
   if (type === "libre") o.swap = {out: p, in: inc.inP, pos: inc.pos || null};
@@ -422,8 +442,8 @@ function activeBanners(t){
     if (e.type==="rouge" && t >= e.t - 1e-6) out.push(`<div class="banner rouge"><b>🟥 Carton rouge : ${esc(e.player)}</b> exclu jusqu'à la fin, on joue à 10.</div>`);
     if (e.type==="bless" && e.back === undefined && t >= e.t - 1e-6) out.push(healAsk === e.player
       ? `<div class="banner bless"><b>🩹 ${esc(e.player)} revient.</b> Doit-il rattraper son temps de jeu ?<div class="note" style="color:inherit;opacity:.85;margin-top:4px">Oui : le plan lui rend les minutes manquées en reprenant un peu sur les autres. Non : il garde seulement le temps qui était prévu pour lui à partir de maintenant.</div><div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn small" data-heal="${esc(e.player)}" data-catch="1">Oui, rattraper</button><button class="btn small" data-heal="${esc(e.player)}" data-catch="0">Non</button><button class="btn small" id="healCancel">Annuler</button></div></div>`
-      : `<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : le plan est recalculé sans lui.</span><button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button></div>`);
-    if (e.type==="retour" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner vert"><b>✚ ${esc(e.player)} de retour</b> : il est sur le banc, ${e.catchUp === false ? "il reprend le temps prévu sans rattraper." : "le plan lui redonne du temps."}</div>`);
+      : `<div class="banner bless row" style="justify-content:space-between"><span><b>🩹 ${esc(e.player)} blessé</b> : ${S.plan?.manual ? "ta liste continue sans lui." : "le plan est recalculé sans lui."}</span><button class="btn small" data-heal="${esc(e.player)}">Fin de blessure</button></div>`);
+    if (e.type==="retour" && t >= e.t - 1e-6 && t < e.t + 2) out.push(`<div class="banner vert"><b>✚ ${esc(e.player)} de retour</b> : il est sur le banc, ${S.plan?.manual ? "ta liste continue." : e.catchUp === false ? "il reprend le temps prévu sans rattraper." : "le plan lui redonne du temps."}</div>`);
   });
   return out.join("");
 }
@@ -438,7 +458,7 @@ function swapPanel(seg){
     <div class="inc-players">${onField.map(n => `<button class="btn" data-swo="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)} <small>${esc(posShort(seg.on[n]))}</small></button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui entre ?</div>
     <div class="inc-players">${bench.map(n => `<button class="btn${outQ && !canQ(n) ? " dim" : ""}" data-swi="${esc(n)}" aria-pressed="${inc.inP===n}">${esc(n)}${outQ && !canQ(n) ? " <small>autre poste</small>" : ""}</button>`).join("") || '<span class="muted">Personne sur le banc</span>'}</div>
-    ${outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas ${esc(posName(outQ).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(outQ).toLowerCase())} jusqu'à la fin du match.`} Le reste du plan est recalculé.</div>` : ""}
+    ${outQ && inc.inP && S.plan?.manual ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)} et reprend ses changements prévus dans ta liste (et inversement).</div>` : outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas ${esc(posName(outQ).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(outQ).toLowerCase())} jusqu'à la fin du match.`} Le reste du plan est recalculé.</div>` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
     <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.player && inc.inP && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider"}</button><button class="btn" id="incCancel">Annuler</button></div>
   </div>`;
@@ -448,6 +468,12 @@ function incidentPanel(seg){
   if (inc.type === "libre" && !inc.pending) return swapPanel(seg);
   const onField = Object.keys(seg.on);
   const card = timedCard(inc.type);
+  if (inc.pending?.fresh) return `<div class="card incp"><h2>À savoir</h2>
+    <p style="margin:0 0 8px">Avec cet imprévu, ces changements de ta liste ne sont plus possibles et seront sautés :</p>
+    <div class="warn">${inc.pending.fresh.map(w => esc(w)).join("<br>")}</div>
+    <p class="muted" style="margin:8px 0 0;font-size:.92rem">Tu peux les remplacer ensuite dans la page Coach, partie « Plan de rotation ».</p>
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo">Valider</button><button class="btn" id="incBack">Revenir</button></div>
+  </div>`;
   if (inc.pending) return `<div class="card incp"><h2>À vérifier</h2>
     <p style="margin:0 0 8px">Le nouveau plan ne peut pas respecter toutes les règles :</p>
     <div class="warn">${inc.pending.warnings.map(w => esc(nicePos(w))).join("<br>")}</div>
@@ -459,17 +485,17 @@ function incidentPanel(seg){
   if (q && inc.inP === undefined) inc.inP = subs[0]?.name || null;
   const subHtml = q ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui le remplace au poste ${pill(q)} ${esc(posName(q))} ?</div>
     <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && (x.knows || x.line) ? " <small>conseillé</small>" : ""}${x.knows ? "" : x.line ? " <small>même ligne</small>" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
-    ${inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} ne joue pas ${esc(posName(q).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(q).toLowerCase())} jusqu'à la fin du match.</div>` : ""}` : "";
+    ${S.plan?.manual && inc.inP ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} prend le poste ${esc(posName(q).toLowerCase())} et reprend les changements prévus de ${esc(inc.player)}.</div>` : inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} ne joue pas ${esc(posName(q).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(q).toLowerCase())} jusqu'à la fin du match.</div>` : ""}` : "";
   return `<div class="card incp"><h2>Imprévu</h2>
     <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quel joueur ?</div>
     <div class="inc-players">${onField.map(n => `<button class="btn" data-incp="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)}</button>`).join("")}</div>
     ${subHtml}
-    ${card ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">À son retour, doit-il rattraper les ${INC[inc.type].d} minutes de la carte ?</div>
+    ${card && !S.plan?.manual ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">À son retour, doit-il rattraper les ${INC[inc.type].d} minutes de la carte ?</div>
     <div class="inc-players"><button class="btn" data-catch-card="1" aria-pressed="${inc.catchUp===true}">Oui, rattraper</button><button class="btn" data-catch-card="0" aria-pressed="${inc.catchUp===false}">Non</button></div>
     ${inc.catchUp !== undefined ? `<div class="muted" style="margin-top:6px;font-size:.88rem">${inc.catchUp ? "Le plan lui rendra ces minutes en reprenant un peu sur les autres." : "Il perd ces minutes, les autres jouent un peu plus."}</div>` : ""}` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
-    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy && !(card && inc.catchUp === undefined) ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy && !(card && !S.plan?.manual && inc.catchUp === undefined) ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
   </div>`;
 }
 /* ---------- match sheet ---------- */
@@ -807,7 +833,7 @@ function bindMatch(){
   $("#saveMatch")?.addEventListener("click", saveMatch);
   $("#incOpen")?.addEventListener("click", () => { inc = {type:null, player:null}; incMsg = ""; render(); });
   $("#incCancel")?.addEventListener("click", () => { inc = null; render(); });
-  $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed && ADJ) adjAsk("undo"); else if (this.dataset.armed) { S.plan = S.prevPlan; S.prevPlan = null; syncDone(); pushClock(); persist(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
+  $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed && ADJ) adjAsk("undo"); else if (this.dataset.armed) { undoIncident(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
   $("#swapOpen")?.addEventListener("click", () => { inc = {type:"libre", player:null, inP:null}; incMsg = ""; render(); });
   document.querySelectorAll("[data-swo]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.swo; render(); }));
   document.querySelectorAll("[data-swi]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swi; render(); }));
@@ -817,7 +843,7 @@ function bindMatch(){
   document.querySelectorAll("[data-incin]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.incin; render(); }));
   document.querySelectorAll("[data-heal]").forEach(b => b.addEventListener("click", function(){
     const n = this.dataset.heal;
-    if (this.dataset.catch === undefined) { healAsk = n; render(); return; }
+    if (this.dataset.catch === undefined && !S.plan?.manual) { healAsk = n; render(); return; }
     const catchUp = this.dataset.catch === "1";
     if (ADJ) { healAsk = null; adjAsk("heal", {player:n, catchUp}); } else endInjury(n, catchUp);
   }));
@@ -1186,22 +1212,44 @@ function bindRules(v){
 let mq = 1, mw = null, mView = 0; // quart affiché, changement en cours de saisie, moment du terrain consulté (s depuis le début du quart)
 const manualList = () => Array.isArray(S.manual) ? S.manual : (S.manual = []);
 const sameOn = (x, y) => Object.keys(x).length === Object.keys(y).length && Object.keys(x).every(k => y[k] === x[k]);
-// Terrain (nom -> poste) après les changements jusqu'à t inclus ; un changement devenu impossible est ignoré.
-function manualState(t){
-  const names = new Set(present().map(p => p.name)), on = {}, bad = [];
+// Imprévus pris en compte par la liste (évènements du plan actif).
+const M_EV = ["bless", "retour", "rouge", "libre", "vert", "jaune", "jaune10"];
+const mEvents = () => S.plan?.manual ? (S.plan.events || []) : [];
+// Terrain (nom -> poste) après les changements et imprévus jusqu'à t inclus. Après une blessure ou un
+// hors plan, le remplaçant reprend les changements prévus du joueur sorti (et inversement). Pendant un
+// carton, le poste du joueur sanctionné reste vide. Un changement devenu impossible est sauté.
+function manualState(t, events = mEvents()){
+  const names = new Set(present().map(p => p.name)), on = {}, bad = [], eff = {}, gone = new Set(), swaps = [], cards = [];
   Object.entries(S.lineup).forEach(([q, n]) => { if (n && names.has(n)) on[n] = q; });
-  manualList().slice().sort((a, b) => a.t - b.t).forEach(c => {
-    if (c.t > t + 1e-6) return;
-    if (c.outs.length !== c.ins.length || c.outs.some(n => !(n in on)) || c.ins.some(n => n in on || !names.has(n))) { bad.push(c.id); return; }
-    c.outs.forEach(n => delete on[n]); c.ins.forEach((n, i) => on[n] = c.pos[i]);
-  });
-  return {on, bad};
+  const ren = n => swaps.reduce((x, [a, b]) => x === a ? b : x === b ? a : x, n);
+  const items = [...manualList().map(c => ({t: c.t, c})), ...events.filter(e => M_EV.includes(e.type)).map(e => ({t: e.t, e}))]
+    .sort((a, b) => a.t - b.t || (a.e ? 1 : 0) - (b.e ? 1 : 0));
+  for (const it of items) {
+    if (it.t > t + 1e-6) break;
+    if (it.c) {
+      const c = it.c, outs = c.outs.map(ren), ins = c.ins.map(ren); eff[c.id] = {outs, ins};
+      if (outs.length !== ins.length || outs.some(n => !(n in on)) || ins.some(n => n in on || gone.has(n) || !names.has(n))) { bad.push(c.id); continue; }
+      outs.forEach(n => delete on[n]); ins.forEach((n, i) => on[n] = c.pos[i]);
+      continue;
+    }
+    const e = it.e, p = e.player, q = on[p];
+    if (e.type === "bless" || e.type === "libre") {
+      if (q) delete on[p];
+      if (e.inP && q && !(e.inP in on)) { on[e.inP] = q; swaps.push([p, e.inP]); }
+      if (e.type === "bless") gone.add(p);
+    } else if (e.type === "retour") gone.delete(p);
+    else if (e.type === "rouge") { if (q) delete on[p]; gone.add(p); }
+    else if (q) cards.push({q, a: e.t, b: e.t + e.d});
+  }
+  cards.filter(k => t >= k.a - 1e-6 && t < k.b - 1e-6).forEach(k => { const n = Object.keys(on).find(x => on[x] === k.q); if (n) delete on[n]; });
+  return {on, bad, eff};
 }
-function manualPlan(){
-  const END = S.rules.quarters * S.rules.qlen;
-  const pts = [0, ...new Set(manualList().map(c => c.t).filter(t => t > 1e-6 && t < END - 1e-6))].sort((a, b) => a - b);
+function manualPlan(events = mEvents()){
+  const END = S.rules.quarters * S.rules.qlen, evs = events.filter(e => M_EV.includes(e.type));
+  const times = [...manualList().map(c => c.t), ...evs.map(e => e.t), ...evs.filter(e => timedCard(e.type)).map(e => e.t + e.d)];
+  const pts = [0, ...new Set(times.filter(t => t > 1e-6 && t < END - 1e-6))].sort((a, b) => a - b);
   const segs = [];
-  pts.forEach((a, i) => { const b = pts[i + 1] ?? END, on = manualState(a).on, L = segs[segs.length - 1]; if (L && sameOn(L.on, on)) L.b = b; else segs.push({a, b, on}); });
+  pts.forEach((a, i) => { const b = pts[i + 1] ?? END, on = manualState(a, events).on, L = segs[segs.length - 1]; if (L && sameOn(L.on, on)) L.b = b; else segs.push({a, b, on}); });
   const changes = [];
   for (let i = 1; i < segs.length; i++) {
     const A = segs[i-1].on, B = segs[i].on;
@@ -1210,10 +1258,10 @@ function manualPlan(){
   const played = {}, intervals = {};
   present().forEach(p => { played[p.name] = 0; intervals[p.name] = []; });
   segs.forEach(sg => Object.keys(sg.on).forEach(n => { played[n] = (played[n] || 0) + sg.b - sg.a; const L = (intervals[n] ||= []); if (L.length && Math.abs(L[L.length-1][1] - sg.a) < 1e-6) L[L.length-1][1] = sg.b; else L.push([sg.a, sg.b]); }));
-  const bad = manualState(END).bad, warnings = [];
+  const st = manualState(END, events), warnings = [];
   if (Object.keys(segs[0].on).length < PRESETS[S.preset].length) warnings.push("La compo de départ n'est pas complète.");
-  manualList().filter(c => bad.includes(c.id)).sort((a, b) => a.t - b.t).forEach(c => warnings.push(`${manualWhen(c.t, true)} : changement ignoré (${c.ins.join(", ")} pour ${c.outs.join(", ")}), un joueur n'est plus sur le terrain ou y est déjà.`));
-  return {segs, changes, played, targets: {...played}, intervals, warnings, events: [], score: 0, manual: true, timeMode: "manual", rulesSig: rulesSig(), fmt: fmtSig()};
+  manualList().filter(c => st.bad.includes(c.id)).sort((a, b) => a.t - b.t).forEach(c => { const f = st.eff[c.id] || c; warnings.push(`${manualWhen(c.t, true)} : changement sauté (${f.ins.join(", ")} pour ${f.outs.join(", ")}), un joueur n'est plus sur le terrain, y est déjà ou ne peut plus jouer.`); });
+  return {segs, changes, played, targets: {...played}, intervals, warnings, events, score: 0, manual: true, timeMode: "manual", rulesSig: rulesSig(), fmt: fmtSig()};
 }
 const mEndLab = () => halves() ? "Fin de la mi-temps" : "Fin du quart";
 function manualWhen(t, withQ){
@@ -1221,9 +1269,13 @@ function manualWhen(t, withQ){
   if (m < 1e-6 && q > 1) return halves() ? "Mi-temps" : `Fin du ${pShort(q - 1)}`;
   return (withQ ? pShort(q) + " · " : "") + R.fmtMin(m);
 }
-// Le plan actif suit la liste tant que le match n'a pas commencé.
+// Le plan actif suit la liste. Pendant le match, seuls les changements à venir bougent et les imprévus restent.
 function manualApply(){
-  if (S.plan?.manual && !matchStarted()) { S.plan = manualPlan(); S.prevPlan = null; S.basePlan = null; preview = null; pushClock(); }
+  if (S.plan?.manual) {
+    if (!matchStarted()) { S.plan = manualPlan([]); S.prevPlan = null; S.basePlan = null; }
+    else { const rest = S.plan.savedAt; S.plan = manualPlan(); if (rest) S.plan.savedAt = rest; syncDone(); }
+    preview = null; pushClock();
+  }
   persist(); render();
 }
 function manualPitch(t){
@@ -1231,17 +1283,17 @@ function manualPitch(t){
   return pitchLines() + PRESETS[S.preset].map(([id, label, line, x, y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who(id))}</span></div>`).join("");
 }
 function manualCard(){
-  const ql = +S.rules.qlen, nq = S.rules.quarters, q = Math.min(mq, nq), qa = (q - 1) * ql, lock = matchStarted();
+  const ql = +S.rules.qlen, nq = S.rules.quarters, q = Math.min(mq, nq), qa = (q - 1) * ql, started = matchStarted(), now = started ? matchT() : -1, lock = !!S.plan?.savedAt;
   const active = !!S.plan?.manual, plan = active ? S.plan : manualPlan();
   const tabs = `<div class="seg seg-full" role="group" aria-label="${halves() ? "Mi-temps" : "Quart"}">${Array.from({length: nq}, (_, k) => `<button data-mq="${k + 1}" aria-pressed="${k + 1 === q}">${esc(pShort(k + 1))}</button>`).join("")}</div>`;
-  const badIds = manualState(nq * ql).bad;
+  const fin = manualState(nq * ql), badIds = fin.bad;
   const rows = manualList().filter(c => c.t > qa + 1e-6 && c.t <= qa + ql + 1e-6).sort((a, b) => a.t - b.t).map(c => `<div class="mrow${badIds.includes(c.id) ? " bad" : ""}">
       <div class="mt">${esc(c.t >= qa + ql - 1e-6 ? mEndLab() : R.fmtMin(c.t - qa))}</div>
-      <div class="mw"><div class="i">${c.ins.map((n, i) => `<span>↑ ${esc(n)} ${pill(c.pos[i])}</span>`).join("")}</div><div class="o">${c.outs.map(n => `<span>↓ ${esc(n)}</span>`).join("")}</div>${badIds.includes(c.id) ? `<div class="note">Impossible à ce moment : il est ignoré.</div>` : ""}</div>
-      ${lock ? "" : `<button class="btn small" data-mdel="${c.id}" aria-label="Supprimer ce changement">✕</button>`}</div>`).join("") || `<p class="muted" style="margin:6px 0">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
+      <div class="mw"><div class="i">${c.ins.map((n, i) => `<span>↑ ${esc(n)} ${pill(c.pos[i])}</span>`).join("")}</div><div class="o">${c.outs.map(n => `<span>↓ ${esc(n)}</span>`).join("")}</div>${(f => f && (f.outs.join() !== c.outs.join() || f.ins.join() !== c.ins.join()) ? `<div class="note">Après l'imprévu : ${f.ins.map(n => "↑ " + esc(n)).join(" ")} ${f.outs.map(n => "↓ " + esc(n)).join(" ")}</div>` : "")(fin.eff[c.id])}${badIds.includes(c.id) ? `<div class="note">Impossible à ce moment : il est sauté.</div>` : ""}</div>
+      ${lock || c.t <= now + 1e-6 ? "" : `<button class="btn small" data-mdel="${c.id}" aria-label="Supprimer ce changement">✕</button>`}</div>`).join("") || `<p class="muted" style="margin:6px 0">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
   let wiz = "";
   if (mw && !lock) {
-    const t = mw.end ? qa + ql : qa + mw.m + mw.s / 60, tOk = mw.end || (t > qa + 1e-6 && t < qa + ql - 1e-6);
+    const t = mw.end ? qa + ql : qa + mw.m + mw.s / 60, tOk = (mw.end || (t > qa + 1e-6 && t < qa + ql - 1e-6)) && t > now + 1e-6;
     const st = tOk ? manualState(t).on : {};
     const field = PRESETS[S.preset].map(([id]) => Object.keys(st).find(n => st[n] === id)).filter(Boolean);
     const bench = present().map(p => p.name).filter(n => !(n in st));
@@ -1250,7 +1302,7 @@ function manualCard(){
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="msel"><select id="mMin" ${mw.end ? "disabled" : ""} aria-label="Minute">${mins.map(k => `<option value="${k}" ${k === mw.m ? "selected" : ""}>${k} min</option>`).join("")}</select></label>
       <label class="msel"><select id="mSec" ${mw.end ? "disabled" : ""} aria-label="Seconde">${secs.map(k => `<option value="${k}" ${k === mw.s ? "selected" : ""}>${String(k).padStart(2, "0")} s</option>`).join("")}</select></label>
       ${q < nq ? `<button class="btn small" id="mEnd" aria-pressed="${mw.end}">${mEndLab()}</button>` : ""}</div>
-      ${tOk ? "" : `<div class="warn" style="margin-top:8px">Choisis un moment entre 0'01 et ${R.fmtMin(ql)} du quart${q < nq ? `, ou « ${mEndLab()} »` : ""}.</div>`}</div>`;
+      ${tOk ? "" : `<div class="warn" style="margin-top:8px">${t <= now + 1e-6 ? "Ce moment est déjà passé : choisis un moment à venir." : `Choisis un moment entre 0'01 et ${R.fmtMin(ql)} du quart${q < nq ? `, ou « ${mEndLab()} »` : ""}.`}</div>`}</div>`;
     let body = "";
     if (tOk && mw.step === "when") body = `<button class="btn primary" id="mNext" style="margin-top:10px">OK</button>`;
     if (tOk && mw.step !== "when") body += `<div class="mstep"><b>2. Qui sort ?</b> <span class="muted">${mw.outs.length ? mw.outs.length + " choisi" + (mw.outs.length > 1 ? "s" : "") : "touche un ou plusieurs joueurs"}</span>
@@ -1265,8 +1317,8 @@ function manualCard(){
   }
   const vt = qa + Math.min(mView, ql * 60) / 60;
   const tp = Object.keys(plan.played).filter(n => plan.played[n] > 0 || present().some(p => p.name === n)).sort((a, b) => plan.played[b] - plan.played[a]);
-  return `${lock ? `<div class="warn" style="margin-top:10px">Le match a commencé : pour changer en direct, utilise « Hors plan » dans l'écran Match. Remets le match à 0 pour modifier ta liste.</div>` : ""}
-    ${lock ? "" : !active ? `<div class="warn" style="margin-top:10px;background:var(--chip);color:var(--ink)">${S.plan ? "Le plan actif n'est pas ta liste de changements." : "Pas encore de plan pour ce match."} <button class="btn go small" id="mUse" ${lock ? "disabled" : ""}>Utiliser mes changements pour le match</button></div>` : `<div class="ok" style="margin-top:10px">Plan actif pour le match : tes changements, sans règles. ${visChanges(S.plan).length} moments de changement.</div>`}
+  return `${lock ? `<div class="warn" style="margin-top:10px">Ce match est terminé et enregistré.</div>` : started && active ? `<div class="muted" style="margin-top:10px;font-size:.92rem">Match en cours : tu peux encore modifier les changements à venir.</div>` : ""}
+    ${lock || (started && active) ? "" : !active ? `<div class="warn" style="margin-top:10px;background:var(--chip);color:var(--ink)">${S.plan ? "Le plan actif n'est pas ta liste de changements." : "Pas encore de plan pour ce match."} <button class="btn go small" id="mUse" ${started ? "disabled" : ""}>Utiliser mes changements pour le match</button></div>` : `<div class="ok" style="margin-top:10px">Plan actif pour le match : tes changements, sans règles. ${visChanges(S.plan).length} moments de changement.</div>`}
     ${plan.warnings.length ? `<div class="warn" style="margin-top:8px">${plan.warnings.map(w => esc(w)).join("<br>")}</div>` : ""}
     <div style="margin-top:12px">${tabs}</div>
     <div class="mlist">${rows}</div>
@@ -1281,7 +1333,7 @@ function bindManual(){
   const ql = +S.rules.qlen, qa = (Math.min(mq, S.rules.quarters) - 1) * ql;
   document.querySelectorAll("[data-mq]").forEach(b => b.addEventListener("click", () => { mq = +b.dataset.mq; mw = null; render(); }));
   document.querySelectorAll("[data-mdel]").forEach(b => b.addEventListener("click", () => { S.manual = manualList().filter(c => c.id !== b.dataset.mdel); manualApply(); }));
-  $("#mAdd")?.addEventListener("click", () => { const last = manualList().filter(c => c.t > qa && c.t < qa + ql).sort((a, b) => b.t - a.t)[0]; const m0 = last ? Math.min(Math.floor(ql), Math.floor(last.t - qa) + 2) : (mq === 1 ? 6 : 4); mw = {step: "when", m: m0, s: 0, end: false, outs: [], ins: [], pos: []}; render(); });
+  $("#mAdd")?.addEventListener("click", () => { const last = manualList().filter(c => c.t > qa && c.t < qa + ql).sort((a, b) => b.t - a.t)[0]; let m0 = last ? Math.min(Math.floor(ql), Math.floor(last.t - qa) + 2) : (mq === 1 ? 6 : 4); if (matchStarted() && matchT() >= qa && matchT() < qa + ql) m0 = Math.max(m0, Math.min(Math.floor(ql), Math.floor(matchT() - qa) + 1)); mw = {step: "when", m: m0, s: 0, end: false, outs: [], ins: [], pos: []}; render(); });
   $("#mCancel")?.addEventListener("click", () => { mw = null; render(); });
   $("#mMin")?.addEventListener("change", e => { mw.m = +e.target.value; mw.step = "when"; mw.outs = []; mw.ins = []; render(); });
   $("#mSec")?.addEventListener("change", e => { mw.s = +e.target.value; mw.step = "when"; mw.outs = []; mw.ins = []; render(); });
