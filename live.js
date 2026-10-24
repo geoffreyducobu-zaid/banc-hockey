@@ -13,7 +13,7 @@ function genLiveCode(){ const A = "abcdefghjkmnpqrstuvwxyz23456789", r = new Uin
 // Ce que l'adjoint reçoit : de quoi afficher le match, rien de plus.
 function adjointView(){
   let plan = null;
-  if (S.plan) { plan = JSON.parse(JSON.stringify(S.plan)); delete plan.targets; delete plan.played; delete plan.warnings; delete plan.score; }
+  if (S.plan) { plan = JSON.parse(JSON.stringify(S.plan)); delete plan.targets; delete plan.played; delete plan.intervals; delete plan.warnings; delete plan.score; (plan.events || []).forEach(e => delete e.was); }
   return {teamName:S.teamName, color:S.color || DEFAULT_COLOR, profile:{club:S.profile?.club || ""}, matchLabel:S.matchLabel || "", matchDate:S.matchDate || "",
     preset:S.preset, rules:S.rules, plan, sheet:S.sheet, hasPrev:!!S.prevPlan,
     squad:S.squad.map(p => ({name:p.name, pos:p.pos, present:p.present, roles:p.roles || []}))};

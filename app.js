@@ -496,7 +496,7 @@ function incidentPanel(seg){
     <div class="inc-players"><button class="btn" data-catch-card="1" aria-pressed="${inc.catchUp===true}">Oui, rattraper</button><button class="btn" data-catch-card="0" aria-pressed="${inc.catchUp===false}">Non</button></div>
     ${inc.catchUp !== undefined ? `<div class="muted" style="margin-top:6px;font-size:.88rem">${inc.catchUp ? "Le plan lui rendra ces minutes en reprenant un peu sur les autres." : "Il perd ces minutes, les autres jouent un peu plus."}</div>` : ""}` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
-    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy && !(card && !S.plan?.manual && inc.catchUp === undefined) ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.type && inc.player && !incBusy && !(card && !S.plan?.manual && inc.catchUp === undefined) ? "" : "disabled"}>${incBusy ? "Recalcul…" : S.plan?.manual ? "Valider" : "Valider et recalculer"}</button><button class="btn" id="incCancel">Annuler</button></div>
   </div>`;
 }
 /* ---------- match sheet ---------- */
@@ -1438,7 +1438,7 @@ function previewHtml(){
 }
 // Remplace un nom de joueur partout dans un objet (valeurs et clés), sans toucher aux textes.
 function renameIn(o, a, b){
-  if (!o || typeof o !== "object") return;
+  if (!o || typeof o !== "object" || a === b) return;
   for (const k of Object.keys(o)) {
     const v = o[k];
     if (v === a) o[k] = b; else renameIn(v, a, b);
@@ -1455,7 +1455,10 @@ function bindCoach(){
       const nn = el.value.trim(), old = p.name;
       // Le plan et la compo retrouvent les joueurs par leur nom : il doit être unique.
       if (!nn || S.squad.some(x => x !== p && x.name.trim().toLowerCase() === nn.toLowerCase())) { squadMsg = nn ? `Il y a déjà un joueur « ${nn} ». Ajoute l'initiale du nom, ex. « ${nn} D. ».` : "Le nom ne peut pas être vide."; render(); return; }
-      squadMsg = ""; p.name = nn;
+      squadMsg = "";
+      // Même nom (ou l'évènement « change » reçu deux fois) : rien à renommer.
+      if (nn === old) { render(); return; }
+      p.name = nn;
       for (const q in S.lineup) if (S.lineup[q] === old) S.lineup[q] = nn;
       // Les changements écrits par le coach, les plans et les compos des autres matchs suivent aussi le nouveau nom.
       [S.manual, S.plan, S.prevPlan, S.basePlan, ...S.matches.filter(m => m.id !== S.curMatch)].forEach(o => renameIn(o, old, nn));
