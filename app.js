@@ -137,6 +137,16 @@ function zeroStarters(){ if (timeMode() !== "notes") return []; const T = comput
 function budgetLine(){
   const b = minBudget(), used = b.total - b.left, x = R.fmtMin(Math.abs(b.left)), pct = Math.min(100, used / b.total * 100);
   const over = b.left < -0.01, done = !over && b.left < 0.01, cls = over || (done && b.auto) || (!done && !b.auto) ? " over" : done ? " ok" : "";
+  // Égal pour tous / par ligne : l'app partage elle-même ce qui reste, il n'y a rien à distribuer à la main.
+  if (!over && !done && b.auto && timeMode() !== "notes") {
+    const T = computeTargets(), gk = PRESETS[S.preset][0][0], fixed = b.total - b.left > 0.01;
+    const auto = present().filter(p => p.pos.some(q => q !== gk) && !(+p.minutes > 0)), avg = L => R.fmtMin(L.reduce((a, p) => a + (T[p.name] || 0), 0) / L.length);
+    const LN = {def: "Défense", mid: "Milieu", att: "Attaque"}, grp = p => lineGroup(posMeta(p.pos.find(q => q !== gk) || "").line);
+    const per = timeMode() === "all" ? `environ ${avg(auto)} par joueur` : ["def", "mid", "att"].map(g => auto.filter(p => grp(p) === g)).map((L, i) => L.length ? `${LN[["def", "mid", "att"][i]]} ${avg(L)}` : "").filter(Boolean).join(" · ") + " par joueur";
+    return `<div class="budget ok"><div class="budget-big">0' à distribuer : tout est réparti</div>
+    <div class="budget-bar"><i style="width:100%"></i></div>
+    <div class="budget-sub">${R.fmtMin(b.total)} distribuées sur ${R.fmtMin(b.total)} (${b.slots} postes × ${R.fmtMin(b.END)}). ${fixed ? `${R.fmtMin(b.total - b.left)} fixées à la main, le reste partagé` : "Partagées"} à parts égales${timeMode() === "line" ? " dans chaque ligne" : ""} : ${per}. Tu peux fixer les minutes d'un joueur, le reste est repartagé.</div></div>`;
+  }
   const big = over ? `Tu dépasses de ${x}` : done ? "Tout est distribué" : `Il te reste ${x} à distribuer`;
   const note = over ? "Enlève des minutes à certains joueurs."
     : done ? (b.auto ? `Plus rien pour les ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes : enlève des minutes ou remplis leur case.` : "")
