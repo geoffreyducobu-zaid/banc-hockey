@@ -59,6 +59,13 @@
     return r;
   }
 
+  // Plus long morceau de [a, b] sans pause entre quarts : une pause remet à zéro le temps d'affilée sur le terrain.
+  function longestRun(a, b, ql) {
+    let m = 0, x = a;
+    while (x < b - EPS) { const e = Math.min(b, (Math.floor((x + EPS) / ql) + 1) * ql); m = Math.max(m, e - x); x = e; }
+    return m;
+  }
+
   function changeTimes(R) {
     const T = new Set();
     for (let q = 0; q < R.quarters; q++) {
@@ -98,7 +105,7 @@
       const canLeave = p => !locked.has(p) && (t - st[p].since) >= I.minS[p] - EPS;
       const gkChangeOk = isBreak || !rq(R, qi, 'gkOnlyAtBreaks');
       // forced
-      const forcedOut = onList.filter(p => !locked.has(p) && (next - st[p].since) > I.maxS[p] + EPS && canLeave(p));
+      const forcedOut = onList.filter(p => !locked.has(p) && longestRun(st[p].since, next, R.qlen) > I.maxS[p] + EPS && canLeave(p));
       const forcedIn = benchList.filter(p => {
         if (!canEnter(p)) return false;
         const bq = Math.max(st[p].since, qStart(t));
@@ -165,7 +172,7 @@
     for (const p of players) {
       for (const [a, b] of iv[p]) {
         if (b - a < I.minS[p] - EPS && b < END - EPS) v += 1;
-        if (!I.locked.has(p) && b - a > I.maxS[p] + EPS) v += 1;
+        if (!I.locked.has(p) && longestRun(a, b, R.qlen) > I.maxS[p] + EPS) v += 1;
       }
       if (!I.fieldPlayer[p] || I.locked.has(p)) continue;
       let t = R.from || 0; const off = [];
@@ -232,7 +239,8 @@
             const L = grid[s] - runStart;
             if (L < I.minS[p] - EPS && !(R.until && s === nS)) pen += 300 + (I.minS[p] - L) * 30;
             if (I.minFirst[p] && Math.abs(runStart - F0) < EPS && F0 === 0 && L < I.minFirst[p] - EPS) pen += 300 + (I.minFirst[p] - L) * 30;
-            if (!locked.has(p) && L > I.maxS[p] + EPS) pen += 300 + (L - I.maxS[p]) * 30;
+            const Lr = longestRun(runStart, grid[s], R.qlen);
+            if (!locked.has(p) && Lr > I.maxS[p] + EPS) pen += 300 + (Lr - I.maxS[p]) * 30;
             if (s < nS && gkOnly[i] && gkLock[s]) pen += 40;
             benchStart = grid[s];
           }
@@ -566,7 +574,8 @@
       for (const [a, b] of iv) {
         if (b < T1 + EPS) continue;
         if (b - a < minS - EPS && b < END - EPS && !(c.hit.has(p.name) && Math.abs(b - c.T) < EPS)) note(p.name + '<', `${p.name} : passage de moins de ${fmtMin(minS)}`, b - a, false);
-        if (b - a > maxS + EPS) note(p.name + '>', `${p.name} : passage de plus de ${fmtMin(maxS)}`, b - a, true);
+        const run = longestRun(a, b, R.qlen);
+        if (run > maxS + EPS) note(p.name + '>', `${p.name} : plus de ${fmtMin(maxS)} d'affilée sur le terrain`, run, true);
       }
       if (!field || fixed) continue;
       // banc : morceaux hors du terrain (sans la période où il était exclu par un carton)

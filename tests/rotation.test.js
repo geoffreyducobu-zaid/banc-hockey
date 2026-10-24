@@ -43,13 +43,15 @@ test("changements seulement dans les fenêtres autorisées, max 3 entrées à la
   }
 });
 
+// Plus long morceau d'un passage sans pause entre quarts (la pause remet à zéro le maximum d'affilée).
+const run = (a, b) => { let m = 0, x = a; while (x < b - EPS) { const e = Math.min(b, (Math.floor((x + EPS) / rules.qlen) + 1) * rules.qlen); m = Math.max(m, e - x); x = e; } return m; };
 test("passages entre le minimum de la ligne et le maximum", () => {
   for (const [p, iv] of Object.entries(plan.intervals)) {
     const pl = byName[p]; if (pl.note >= 5) continue;
     const max = pl.maxStint || rules.maxStint;
     for (const [a, b] of iv) {
       if (b < END - EPS) assert.ok(b - a >= minStintOf(pl) - EPS, `${p} : passage de ${b - a}'`);
-      assert.ok(b - a <= max + EPS, `${p} : passage de ${b - a}'`);
+      assert.ok(run(a, b) <= max + EPS, `${p} : ${run(a, b)}' d'affilée`);
     }
   }
 });
@@ -181,14 +183,14 @@ test("maximum d'affilée par ligne : chaque joueur respecte le maximum de sa lig
   const res = R.buildPlan({positions, players: pl, lineup: ex.lineup, rules, seed: 4242, iters: 150, saIters: 25000, chains: 2});
   assert.ok(!res.error, String(res.warnings));
   for (const p of pl) { if (p.oneBlock || !p.maxStint) continue;
-    for (const [a, b] of res.intervals[p.name]) assert.ok(b - a <= p.maxStint + EPS, `${p.name} : passage de ${b - a}' (max ${p.maxStint}')`); }
+    for (const [a, b] of res.intervals[p.name]) assert.ok(run(a, b) <= p.maxStint + EPS, `${p.name} : ${run(a, b)}' d'affilée (max ${p.maxStint}')`); }
 });
 
 // ---------- imprévus : les règles du coach tiennent après le recalcul ----------
 const rulesQ = R.migrateRules({...rules, per: {0: {startBlock: 6}, 3: {endBlock: 5, maxEntries: 2}}, maxDef: 22, maxMid: 22, maxAtt: 18});
 const playersL = players.map(p => ({...p, maxStint: p.maxStint || ({def: 22, dm: 22, mid: 22, att: 18})[LINE[p.pos[0]]] || 0}));
 const planQ = R.buildPlan({positions, players: playersL, lineup: ex.lineup, rules: rulesQ, seed: 4242, iters: 200, saIters: 30000, chains: 3});
-const hard = w => /hors des moments permis|en même temps|revient après|passage de plus/.test(w);
+const hard = w => /hors des moments permis|en même temps|revient après|d'affilée/.test(w);
 const fieldAt = (pl, t) => Object.keys(segAt(pl, t).on).filter(n => segAt(pl, t).on[n] !== "G" && !playersL.find(p => p.name === n).locked);
 
 test("blessure : fenêtres par quart, entrées max, banc mini et passage max par ligne respectés", () => {

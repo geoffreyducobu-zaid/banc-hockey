@@ -1248,7 +1248,7 @@ function rulesBody(){
   <div class="card grp rules-all">
     <div class="set"><div><b>Minimum avant de sortir</b><div class="muted">Un joueur reste au moins ce temps sur le terrain, selon sa ligne (son 1er poste).</div></div>
       <div class="rline">${[["minDef","Défense"],["minMid","Milieu"],["minAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Minimum avant de sortir, ${l.toLowerCase()}"></label>`).join("")}</div></div>
-    <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. Tu peux le changer pour un joueur dans Effectif.</div></div>
+    <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. La pause entre deux quarts remet ce compteur à zéro. Tu peux le changer pour un joueur dans Effectif.</div></div>
       <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
     ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
