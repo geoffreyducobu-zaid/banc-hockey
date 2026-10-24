@@ -292,6 +292,13 @@ tr.absent td:not(:first-child){opacity:.45}
 .chk{display:inline-flex;align-items:center;gap:6px;background:var(--chip);border-radius:999px;padding:7px 12px 7px 10px;font-weight:600;font-size:.92rem;color:var(--muted)}
 .chk.on{background:var(--club);color:var(--onclub)}
 .chk input{margin:0;accent-color:var(--onclub)}
+.budget{margin-bottom:10px;padding:10px 12px;border-radius:10px;background:var(--bg);border:1.5px solid var(--rule)}
+.budget-big{font-weight:800;font-size:1.05rem}
+.budget-bar{height:8px;border-radius:4px;background:var(--rule);margin:7px 0 6px;overflow:hidden}
+.budget-bar i{display:block;height:100%;background:var(--club);transition:width .2s}
+.budget-sub{font-size:.85rem;color:var(--muted)}
+.budget.ok{border-color:#2e9e5b}.budget.ok .budget-big{color:#2e9e5b}.budget.ok .budget-bar i{background:#2e9e5b}
+.budget.over{border-color:#d0453a}.budget.over .budget-big{color:#d0453a}.budget.over .budget-bar i{background:#d0453a}
 .mins{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
 .mlist{display:flex;flex-direction:column;margin-top:8px}
 .mrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--rule)}
@@ -379,12 +386,12 @@ tr.absent td:not(:first-child){opacity:.45}
   <button data-tab="settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Réglages</span></button>
 </nav>
 
-<script src="vendor/supabase.js?v=33"></script>
-<script src="config.js?v=33"></script>
-<script src="rotation.js?v=33"></script>
-<script src="vendor/qrcode.js?v=33"></script>
-<script src="cloud.js?v=33"></script>
-<script src="live.js?v=33"></script>
-<script src="app.js?v=33"></script>
+<script src="vendor/supabase.js?v=34"></script>
+<script src="config.js?v=34"></script>
+<script src="rotation.js?v=34"></script>
+<script src="vendor/qrcode.js?v=34"></script>
+<script src="cloud.js?v=34"></script>
+<script src="live.js?v=34"></script>
+<script src="app.js?v=34"></script>
 
 </body></html>

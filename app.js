@@ -118,6 +118,25 @@ function computeTargets(){
   P.forEach(x => { if (!x.field) eq[x.name] = byNotes[x.name]; }); // le gardien garde son calcul habituel
   return eq;
 }
+// Minutes de terrain à répartir (joueurs de champ) : total, déjà fixées, reste. Les 5 étoiles comptent pour tout le match en « Selon mes choix ».
+function minBudget(){
+  const END = S.rules.quarters * S.rules.qlen, ids = PRESETS[S.preset].map(p => p[0]), gk = ids[0];
+  const field = present().filter(p => p.pos.some(q => q !== gk));
+  const fixedOf = p => +p.minutes > 0 ? Math.min(END, +p.minutes) : timeMode() === "notes" && +p.note >= 5 ? END : 0;
+  const total = (ids.length - 1) * END, used = field.reduce((a, p) => a + fixedOf(p), 0);
+  return {END, slots: ids.length - 1, total, left: total - used, auto: field.filter(p => !fixedOf(p)).length, stars: timeMode() === "notes" && field.some(p => !(+p.minutes > 0) && +p.note >= 5)};
+}
+function budgetLine(){
+  const b = minBudget(), used = b.total - b.left, x = R.fmtMin(Math.abs(b.left)), pct = Math.min(100, used / b.total * 100);
+  const over = b.left < -0.01, done = !over && b.left < 0.01, cls = over || (done && b.auto) || (!done && !b.auto) ? " over" : done ? " ok" : "";
+  const big = over ? `Tu dépasses de ${x}` : done ? "Tout est distribué" : `Il te reste ${x} à distribuer`;
+  const note = over ? "Enlève des minutes à certains joueurs."
+    : done ? (b.auto ? `Plus rien pour les ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes : enlève des minutes ou remplis leur case.` : "")
+    : b.auto ? `Elles iront automatiquement aux ${b.auto} joueur${b.auto > 1 ? "s" : ""} sans minutes (chiffres en gris).` : "Ajoute des minutes ou vide une case pour le calcul automatique.";
+  return `<div class="budget${cls}"><div class="budget-big">${big}</div>
+    <div class="budget-bar"><i style="width:${pct}%"></i></div>
+    <div class="budget-sub">${R.fmtMin(used)} distribuées sur ${R.fmtMin(b.total)} (${b.slots} postes × ${R.fmtMin(b.END)})${b.stars ? ", les 5 étoiles comptent pour tout le match" : ""}${note ? `. ${note}` : ""}</div></div>`;
+}
 // Temps de jeu du match : "notes" (étoiles et minutes fixées), "all" (égal pour tous), "line" (égal par ligne),
 // "manual" (le coach écrit lui-même ses changements, sans règles).
 const timeMode = () => S.timeMode || "notes";
@@ -1406,7 +1425,7 @@ function matchPrepTab(){
       `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
       <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]}${timeMode() === "manual" ? "" : " Laisse une case vide pour le calcul automatique (en gris)."}</p>
       ${timeMode() === "manual" ? "" : (() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
-      ${timeMode() === "manual" ? "" : `<div class="mins">${minList}</div>`}`)}
+      ${timeMode() === "manual" ? "" : `<div id="budget">${budgetLine()}</div><div class="mins">${minList}</div>`}`)}
     ${step("rules", 5, true, "Règles de rotation", `${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}` + (() => { const n = Array.from({length:S.rules.quarters}, (_, q) => perDiff(q).length ? 1 : 0).reduce((a, b) => a + b, 0); return n ? ` · ${n} ${halves() ? "mi-temps" : "quart" + (n > 1 ? "s" : "")} ${n > 1 ? "différent" + (halves() ? "es" : "s") : "différent" + (halves() ? "e" : "")}` : ""; })(),
       rulesBody())}
   </div>
@@ -1449,6 +1468,8 @@ function bindCoach(){
   const v = $("#view");
   bindTeams();
   bindManual();
+  // Le compteur de minutes bouge pendant la saisie, avant même de quitter la case.
+  v.querySelectorAll('[data-k="minutes"]').forEach(el => el.addEventListener("input", () => { const b = $("#budget"); if (!b) return; const p = S.squad[+el.dataset.i], old = p.minutes; p.minutes = el.value ? +el.value : 0; b.innerHTML = budgetLine(); p.minutes = old; }));
   v.querySelectorAll("[data-i]").forEach(el => el.addEventListener("change", () => {
     const p = S.squad[+el.dataset.i], k = el.dataset.k;
     if (k === "name") {
