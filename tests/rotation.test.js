@@ -229,3 +229,26 @@ test("un joueur sorti juste avant un imprévu respecte le banc minimum avant de 
   const back = res.segs.find(s => s.a > ch.t + EPS && left in s.on);
   if (back) assert.ok(back.a - ch.t >= rulesQ.minBench - EPS, `${left} revient après ${back.a - ch.t}'`);
 });
+
+test("titulaires : leur 1er passage peut être plus court que le minimum de la ligne, pas les suivants", () => {
+  const r2 = {...rules, minDef: 14, minStint: Math.min(14, rules.minMid, rules.minAtt)};
+  const min2 = p => LINE[p.pos[0]] === "def" ? 14 : minStintOf(p);
+  const first = p => LINE[p.pos[0]] === "def" ? 5 : minStintOf(p);
+  const res = R.buildPlan({
+    positions: Object.keys(LINE).map(id => ({id, gk: id === "G"})),
+    players: present.map(p => ({name:p.name, pos:p.pos, target:targets[p.name], locked: p.note >= 5 && !p.minutes, oneBlock: p.note >= 5, maxStint:p.maxStint || 0, roles:p.roles || [], minStint:min2(p), minStart:first(p)})),
+    lineup: ex.lineup, rules: r2, seed: 4242, iters: 200, saIters: 30000, chains: 3,
+  });
+  assert.ok(!res.error, String(res.warnings));
+  let short = 0;
+  for (const [p, iv] of Object.entries(res.intervals)) {
+    const pl = byName[p]; if (pl.note >= 5) continue;
+    for (const [a, b] of iv) if (b < END - EPS) {
+      const m = a < EPS ? first(pl) : min2(pl);
+      assert.ok(b - a >= m - EPS, `${p} : passage de ${b - a}' (minimum ${m}')`);
+      if (a < EPS && LINE[pl.pos[0]] === "def" && b - a < 14 - EPS) short++;
+    }
+  }
+  assert.ok(short > 0, "aucun défenseur titulaire ne sort avant 14'");
+  assert.ok(!res.warnings.some(x => /passage de moins/.test(x)), String(res.warnings));
+});

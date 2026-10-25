@@ -98,6 +98,9 @@ function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveS
 
 /* ---------- plan helpers ---------- */
 function minStintOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? +S.rules.minDef : (l === "dm" || l === "mid") ? +S.rules.minMid : l === "att" ? +S.rules.minAtt : 0; }
+// 1er passage des titulaires : pas encore réglé = même chiffre que le minimum normal
+const firstOf = k => +(S.rules["first" + k] ?? S.rules["min" + k]);
+function minStartOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? firstOf("Def") : (l === "dm" || l === "mid") ? firstOf("Mid") : l === "att" ? firstOf("Att") : 0; }
 function matchTitle(){
   const parts = [];
   if (S.matchLabel) parts.push(S.matchLabel);
@@ -172,7 +175,7 @@ function generate(seed){
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
   // Plan automatique : un joueur à 0 minute reste sur le banc tout le match.
-  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p)}));
+  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:p.pos, target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p), minStart: minStartOf(p)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -404,7 +407,7 @@ function replanBase(T){
   const Tg = computeTargets();
   // Plan automatique : un joueur à 0 minute reste hors du plan, sauf s'il a joué ou si le coach le fait entrer.
   const sits = x => S.plan.timeMode === "notes" && !(S.plan.targets?.[x.name] > 0) && !(playedUntil(S.plan, x.name, T) > 0) && !eventsOf().some(e => e.inP === x.name) && inc?.inP !== x.name;
-  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x)}));
+  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x)}));
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
@@ -1268,7 +1271,9 @@ function rulesBody(){
   <div class="grp-t">Pour tout le match</div>
   <div class="card grp rules-all">
     <div class="set"><div><b>Minimum avant de sortir</b><div class="muted">Un joueur reste au moins ce temps sur le terrain, selon sa ligne (son 1er poste).</div></div>
-      <div class="rline">${[["minDef","Défense"],["minMid","Milieu"],["minAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Minimum avant de sortir, ${l.toLowerCase()}"></label>`).join("")}</div></div>
+      <div class="rline">${[["minDef","Défense"],["minMid","Milieu"],["minAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Minimum avant de sortir, ${l.toLowerCase()}"></label>`).join("")}</div>
+      <div class="muted" style="margin-top:8px"><b>Titulaires, 1er passage</b> : au début du match, ils peuvent sortir plus tôt pour faire tourner.</div>
+      <div class="rline">${[["firstDef","minDef","Défense"],["firstMid","minMid","Milieu"],["firstAtt","minAtt","Attaque"]].map(([k,m,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k] ?? r[m])}" aria-label="Minimum avant de sortir pour un titulaire au début du match, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. ${halves() ? "La pause de la mi-temps remet" : "La pause entre deux quarts remet"} ce compteur à zéro.</div></div>
       <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
