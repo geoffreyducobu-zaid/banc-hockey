@@ -60,6 +60,8 @@
   }
 
   // Plus long morceau de [a, b] sans pause entre quarts : une pause remet à zéro le temps d'affilée sur le terrain.
+  // minimum avant de sortir : un titulaire (sur le terrain depuis le coup d'envoi) a le sien pour son 1er passage
+  const minOn = (I, p, start) => start < EPS ? I.minS0[p] : I.minS[p];
   function longestRun(a, b, ql) {
     let m = 0, x = a;
     while (x < b - EPS) { const e = Math.min(b, (Math.floor((x + EPS) / ql) + 1) * ql); m = Math.max(m, e - x); x = e; }
@@ -102,7 +104,7 @@
       const need = p => (targets[p] - st[p].played) / Math.max(remain, EPS);
       // eligibility
       const canEnter = p => remain >= I.minS[p] - EPS && (t - st[p].since) >= R.minBench - EPS;
-      const canLeave = p => !locked.has(p) && (t - st[p].since) >= I.minS[p] - EPS;
+      const canLeave = p => !locked.has(p) && (t - st[p].since) >= minOn(I, p, st[p].since) - EPS;
       const gkChangeOk = isBreak || !rq(R, qi, 'gkOnlyAtBreaks');
       // forced
       const forcedOut = onList.filter(p => !locked.has(p) && longestRun(st[p].since, next, R.qlen) > I.maxS[p] + EPS && canLeave(p));
@@ -171,7 +173,7 @@
     const iv = intervals(res.segs, players);
     for (const p of players) {
       for (const [a, b] of iv[p]) {
-        if (b - a < I.minS[p] - EPS && b < END - EPS) v += 1;
+        if (b - a < minOn(I, p, a) - EPS && b < END - EPS) v += 1;
         if (!I.locked.has(p) && longestRun(a, b, R.qlen) > I.maxS[p] + EPS) v += 1;
       }
       if (!I.fieldPlayer[p] || I.locked.has(p)) continue;
@@ -237,7 +239,8 @@
           }
           if (!v && pv) { // leave at grid[s]
             const L = grid[s] - runStart;
-            if (L < I.minS[p] - EPS && !(R.until && s === nS)) pen += 300 + (I.minS[p] - L) * 30;
+            const mn = minOn(I, p, runStart);
+            if (L < mn - EPS && !(R.until && s === nS)) pen += 300 + (mn - L) * 30;
             if (I.minFirst[p] && Math.abs(runStart - F0) < EPS && F0 === 0 && L < I.minFirst[p] - EPS) pen += 300 + (I.minFirst[p] - L) * 30;
             const Lr = longestRun(runStart, grid[s], R.qlen);
             if (!locked.has(p) && Lr > I.maxS[p] + EPS) pen += 300 + (Lr - I.maxS[p]) * 30;
@@ -355,9 +358,10 @@
     const roles = {}; P.forEach(p => roles[p.name] = p.roles || []);
     const minFirst = {}; P.forEach(p => { if (p.minFirst) minFirst[p.name] = p.minFirst; });
     const minS = {}; P.forEach(p => minS[p.name] = Math.max(R.minStint, p.minStint || 0));
+    const minS0 = {}; P.forEach(p => minS0[p.name] = p.minStart ?? minS[p.name]);
     const rolesAvail = [...new Set(P.flatMap(p => (p.roles || [])))];
     const maxS = {}; P.forEach(p => maxS[p.name] = p.oneBlock ? END : Math.max(R.minStint, p.minStint || 0, p.maxStint || R.maxStint));
-    const I = { players, posIds, lineup, R, targets, locked, can, pref, gkPos, fieldPlayer, maxS, oneBlock, roles, rolesAvail, minFirst, minS, since: input.since || null, prior: input.prior || null, times: changeTimes(R) };
+    const I = { players, posIds, lineup, R, targets, locked, can, pref, gkPos, fieldPlayer, maxS, oneBlock, roles, rolesAvail, minFirst, minS, minS0, since: input.since || null, prior: input.prior || null, times: changeTimes(R) };
     const rand = rng(seed || 12345);
     let best = null, bestScore = Infinity;
     const iters = input.iters || 300;
@@ -470,7 +474,7 @@
         const vac0 = new Set(o.vacate || []), posA = o.positions.filter(p => !vac0.has(p.id) && !fo.some(n => cur[n] === p.id));
         const st = stats(prefix, fr, T), playersA = o.players.filter(p => !outSet.has(p.name) && !fo.includes(p.name));
         const share = (T1 - T) / Math.max(EPS, END - T), lineupA = {}; for (const [n, q] of Object.entries(fr)) lineupA[q] = n;
-        const subA = buildPlan({ positions: posA, players: playersA.map(p => ({ name: p.name, pos: p.pos, target: Math.max(0, p.target + ((o.adjust || {})[p.name] || 0) - st.played[p.name]) * share, locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint })),
+        const subA = buildPlan({ positions: posA, players: playersA.map(p => ({ name: p.name, pos: p.pos, target: Math.max(0, p.target + ((o.adjust || {})[p.name] || 0) - st.played[p.name]) * share, locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint, minStart: p.minStart })),
           lineup: lineupA, rules: { ...o.rules, from: T, until: T1 }, since: st.since, prior: st.played, seed: (o.seed || 7) + 13, iters: 80, saIters: Math.round((o.saIters || 35000) / 3), chains: 2 });
         if (!subA.error && subA.segs.length) segsA = subA.segs;
       } catch (e) { segsA = null; }
@@ -529,7 +533,7 @@
     const attempt = seed => {
       let subSegs = [];
       if (T1 < END - EPS) { // un carton qui finit avec le match : plus rien à planifier
-        const sub = buildPlan({ positions, players: avail.map(p => ({ name: p.name, pos: p.pos, target: rem[p.name], locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint })), lineup, rules: { ...o.rules, from: T1 }, since, prior: played, seed, iters: 150, saIters: o.saIters || 35000, chains: 3 });
+        const sub = buildPlan({ positions, players: avail.map(p => ({ name: p.name, pos: p.pos, target: rem[p.name], locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint, minStart: p.minStart })), lineup, rules: { ...o.rules, from: T1 }, since, prior: played, seed, iters: 150, saIters: o.saIters || 35000, chains: 3 });
         if (sub.error) return sub;
         subSegs = sub.segs;
       }
@@ -570,9 +574,10 @@
     for (const p of players) {
       const field = p.pos.some(q => q !== c.gk), fixed = p.locked || p.oneBlock;
       const iv = []; for (const s of segs) if (p.name in s.on) { const L = iv[iv.length - 1]; if (L && Math.abs(L[1] - s.a) < EPS) L[1] = s.b; else iv.push([s.a, s.b]); }
-      const minS = Math.max(R.minStint, p.minStint || 0), maxS = fixed ? END : Math.max(minS, p.maxStint || R.maxStint);
+      const minN = Math.max(R.minStint, p.minStint || 0), maxS = fixed ? END : Math.max(minN, p.maxStint || R.maxStint);
       for (const [a, b] of iv) {
         if (b < T1 + EPS) continue;
+        const minS = a < EPS ? p.minStart ?? minN : minN; // titulaire : son 1er passage a son propre minimum
         if (b - a < minS - EPS && b < END - EPS && !(c.hit.has(p.name) && Math.abs(b - c.T) < EPS)) note(p.name + '<', `${p.name} : passage de moins de ${fmtMin(minS)}`, b - a, false);
         const run = longestRun(a, b, R.qlen);
         if (run > maxS + EPS) note(p.name + '>', `${p.name} : plus de ${fmtMin(maxS)} d'affilée sur le terrain`, run, true);
