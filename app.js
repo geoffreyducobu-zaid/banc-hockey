@@ -772,7 +772,7 @@ function changeLines(ch){
       <div class="s-names">
         <div class="s-row s-in"><span class="mk in" aria-hidden="true">↑</span><span class="big"><span class="sr">Entre : </span>${esc(pr.inP || "—")}</span></div>
         <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}</span></div>
-        ${mv.map(g => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span class="sr">Change de poste : </span><b>${esc(g.p)}</b> ${pill(g.a)} → ${pill(g.b)}</span></div>`).join("")}
+        ${mv.map((g, i) => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span><b>${esc(i + 1 < mv.length ? mv[i + 1].p : pr.inP)}</b> prend la place de <b>${esc(g.p)}</b> (${esc(lc(g.a))}), ${esc(g.p)} passe ${esc(lc(g.b))}</span></span></div>`).join("")}
       </div>
       ${mv.length ? movePitch(mv, pr.inQ) : miniPitch(pr.inQ || pr.outQ)}
       ${pr.inP ? `<div class="where">${esc(pr.inP)} : ${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${mv.length ? mv.map(g => `<br>${esc(g.p)} : ${pill(g.b)} ${esc(posMeta(g.b).label)} <span class="note">(au lieu de ${esc(lc(g.a))})</span>`).join("") : pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(lc(pr.outQ))})</span>` : ""}</div>` : ""}
