@@ -1011,11 +1011,11 @@ function homeView(){
   const ready = !!S.plan, title = matchTitle(), hi = `Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !`;
   if (!S.squad.length) return pinNudge() + `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
   <button class="btn dark big" id="hCoach">Créer mon équipe →</button>
-  ${accountNudge()}${howTo()}${contactLine()}`;
+  ${accountNudge()}${howTo()}`;
   return pinNudge() + `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
   <div class="tiles"><div class="tile"><b>${present().length}</b><span>présents</span></div><div class="tile"><b>${ready ? visChanges(S.plan).length : "–"}</b><span>changements</span></div><div class="tile"><b>${esc(S.preset)}</b><span>système</span></div></div>
   ${ready ? `<button class="btn dark big" id="hMatch">Ouvrir le match →</button>` : `<button class="btn primary big" id="hCoach">Préparer le match →</button>`}
-  ${accountNudge()}${S.plan ? "" : howTo()}${contactLine()}`;
+  ${accountNudge()}${S.plan ? "" : howTo()}`;
 }
 // Sans code, les notes et les temps visés sont visibles par tous : on le demande dès l'Accueil.
 function pinNudge(){
@@ -1102,7 +1102,6 @@ function settingsView(){
 }
 // « Signaler un souci » : mail prérempli avec la version de l'app et le téléphone (rien sur les joueurs).
 const REPORT_TO = "contact@stickmate.be";
-const contactLine = (style = "margin:0 4px") => `<p class="muted" style="font-size:.85rem;${style}">Un problème, une question, une idée ? Écris-moi : <a href="mailto:${REPORT_TO}">${REPORT_TO}</a></p>`;
 function reportLink(){
   const v = (document.querySelector('script[src*="app.js"]')?.getAttribute("src") || "").match(/v=(\d+)/)?.[1] || "?";
   const body = `Ce que je faisais :\n\n\nCe qui s'est passé (ou ce qui n'est pas clair) :\n\n\n---\nStickMate version ${v}\n${navigator.userAgent}`;
