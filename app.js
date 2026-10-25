@@ -1092,16 +1092,18 @@ function settingsView(){
       <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
       ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}`)}
   </div>`}
-  <div class="grp-t">Aide</div>
+  ${REPORT_ON ? `<div class="grp-t">Aide</div>
   <div class="card grp">
     <div class="set"><div><b>Signaler un souci</b><div class="muted">Un bug, quelque chose de pas clair, une idée : ça ouvre un mail déjà prêt.</div></div><a class="btn small" id="report" href="${esc(reportLink())}">Écrire</a></div>
-  </div>
+  </div>` : ""}
   <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>
   ${CLOUD_ON ? privacyDetails("margin:0 4px") : ""}
   <p class="muted" style="font-size:.8rem;margin:0 4px">${COPYRIGHT}</p>`;
 }
 // « Signaler un souci » : mail prérempli avec la version de l'app et le téléphone (rien sur les joueurs).
 const REPORT_TO = "contact@stickmate.be";
+// Caché tant que la boîte contact@stickmate.be n'est pas active chez OVH : remettre à true ensuite.
+const REPORT_ON = false;
 function reportLink(){
   const v = (document.querySelector('script[src*="app.js"]')?.getAttribute("src") || "").match(/v=(\d+)/)?.[1] || "?";
   const body = `Ce que je faisais :\n\n\nCe qui s'est passé (ou ce qui n'est pas clair) :\n\n\n---\nStickMate version ${v}\n${navigator.userAgent}`;
