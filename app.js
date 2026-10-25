@@ -775,7 +775,7 @@ function changeLines(ch){
         ${mv.map((g, i) => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span><b>${esc(i + 1 < mv.length ? mv[i + 1].p : pr.inP)}</b> prend la place de <b>${esc(g.p)}</b> (${esc(lc(g.a))}), ${esc(g.p)} passe ${esc(lc(g.b))}</span></span></div>`).join("")}
       </div>
       ${mv.length ? movePitch(mv, pr.inQ) : miniPitch(pr.inQ || pr.outQ)}
-      ${pr.inP ? `<div class="where">${esc(pr.inP)} : ${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${mv.length ? mv.map(g => `<br>${esc(g.p)} : ${pill(g.b)} ${esc(posMeta(g.b).label)} <span class="note">(au lieu de ${esc(lc(g.a))})</span>`).join("") : pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(lc(pr.outQ))})</span>` : ""}</div>` : ""}
+      ${pr.inP && !mv.length ? `<div class="where">${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(lc(pr.outQ))})</span>` : ""}</div>` : ""}
     </div>`; }).join("");
   const mg = moveGroups({...ch, moves: ch.moves.filter((m, i) => !usedM.has(i))});
   if (mg.length) html += `<div class="reorg"><div class="reorg-x"><div class="reorg-t">Changements de poste</div>${mg.map(g => g.swap
