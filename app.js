@@ -743,7 +743,7 @@ function moveText(g){
   return g.swap ? `${g.p} et ${g.p2} échangent leur poste (${lc(g.a)} et ${lc(g.b)})` : `${g.p} : ${lc(g.a)} → ${lc(g.b)}`;
 }
 // Petit terrain avec des flèches : d'où part et où va chaque joueur qui change de poste.
-function movePitch(groups){
+function movePitch(groups, dot){
   const xy = q => { const p = (PRESETS[S.preset] || []).find(([id]) => id === q); return p ? [1 + p[3]*0.6, 1 + p[4]*0.86] : null; };
   const arrows = groups.map(g => {
     const A = xy(g.a), B = xy(g.b); if (!A || !B) return "";
@@ -752,7 +752,8 @@ function movePitch(groups){
     const head = (P, sx, sy) => `<path class="ah" d="M${(P[0]).toFixed(1)} ${(P[1]).toFixed(1)} L${(P[0]-sx*5-sy*3).toFixed(1)} ${(P[1]-sy*5+sx*3).toFixed(1)} L${(P[0]-sx*5+sy*3).toFixed(1)} ${(P[1]-sy*5-sx*3).toFixed(1)}Z"/>`;
     return `<line class="ar" x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"/>${head(b, ux, uy)}${g.swap ? head(a, -ux, -uy) : ""}<circle cx="${A[0].toFixed(1)}" cy="${A[1].toFixed(1)}" r="4"/><circle cx="${B[0].toFixed(1)}" cy="${B[1].toFixed(1)}" r="4"/>`;
   }).join("");
-  return `<svg class="mini mv" viewBox="0 0 62 88" aria-hidden="true"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g>${arrows}</svg>`;
+  const D = dot ? xy(dot) : null; // poste où entre le remplaçant
+  return `<svg class="mini mv" viewBox="0 0 62 88" aria-hidden="true"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g>${arrows}${D ? `<circle class="in" cx="${D[0].toFixed(1)}" cy="${D[1].toFixed(1)}" r="6"/>` : ""}</svg>`;
 }
 // Petit terrain avec un point sur le poste concerné.
 function miniPitch(q){
@@ -761,15 +762,22 @@ function miniPitch(q){
   return `<svg class="mini" viewBox="0 0 62 88" role="img" aria-label="Poste : ${esc(posName(q))}"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g><circle cx="${(1 + p[3]*0.6).toFixed(1)}" cy="${(1 + p[4]*0.86).toFixed(1)}" r="6"/></svg>`;
 }
 function changeLines(ch){
-  let html = pairChanges(ch).map(pr => `<div class="swap">
+  // Les joueurs déjà sur le terrain qui bougent à cause d'un remplacement sont montrés avec ce remplacement :
+  // le sortant libère un poste, un joueur du terrain y glisse, le remplaçant prend le poste laissé (chaîne).
+  const usedM = new Set();
+  const chainOf = pr => { const L = []; let q = pr.outQ, k;
+    while (pr.inP && pr.outP && q !== pr.inQ && (k = ch.moves.findIndex(([, , b], i) => !usedM.has(i) && b === q)) >= 0) { usedM.add(k); const [p, a, b] = ch.moves[k]; L.push({p, a, b}); q = a; }
+    return L; };
+  let html = pairChanges(ch).map(pr => { const mv = chainOf(pr); return `<div class="swap">
       <div class="s-names">
         <div class="s-row s-in"><span class="mk in" aria-hidden="true">↑</span><span class="big"><span class="sr">Entre : </span>${esc(pr.inP || "—")}</span></div>
         <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}</span></div>
+        ${mv.map(g => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span class="sr">Change de poste : </span><b>${esc(g.p)}</b> ${pill(g.a)} → ${pill(g.b)}</span></div>`).join("")}
       </div>
-      ${miniPitch(pr.inQ || pr.outQ)}
-      ${pr.inP ? `<div class="where">${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">${esc(pr.outP)} jouait ${esc(lc(pr.outQ))}${(m => m ? `, ${esc(m)} glisse à sa place` : "")(ch.moves.find(([, , b]) => b === pr.outQ)?.[0])}</span>` : ""}</div>` : ""}
-    </div>`).join("");
-  const mg = moveGroups(ch);
+      ${mv.length ? movePitch(mv, pr.inQ) : miniPitch(pr.inQ || pr.outQ)}
+      ${pr.inP ? `<div class="where">${esc(pr.inP)} : ${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${mv.length ? mv.map(g => `<br>${esc(g.p)} : ${pill(g.b)} ${esc(posMeta(g.b).label)} <span class="note">(au lieu de ${esc(lc(g.a))})</span>`).join("") : pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(lc(pr.outQ))})</span>` : ""}</div>` : ""}
+    </div>`; }).join("");
+  const mg = moveGroups({...ch, moves: ch.moves.filter((m, i) => !usedM.has(i))});
   if (mg.length) html += `<div class="reorg"><div class="reorg-x"><div class="reorg-t">Changements de poste</div>${mg.map(g => g.swap
       ? `<div class="reorg-l"><div class="rl-h">⇄ <b>${esc(g.p)}</b> et <b>${esc(g.p2)}</b> échangent</div><div class="rl-d"><b>${esc(g.p)}</b> ${pill(g.a)} → ${pill(g.b)}</div><div class="rl-d"><b>${esc(g.p2)}</b> ${pill(g.b)} → ${pill(g.a)}</div></div>`
       : `<div class="reorg-l"><div class="rl-h"><b>${esc(g.p)}</b></div><div class="rl-d">${pill(g.a)} → ${pill(g.b)} ${esc(posName(g.b))}</div></div>`).join("")}</div>${movePitch(mg)}</div>`;
