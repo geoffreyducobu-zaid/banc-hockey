@@ -229,7 +229,8 @@ function accountScreen(){
       <div class="form">${field("auEmail", "Email", "email", "email", authEmail)}<span></span>
         ${field("auPw", "Mot de passe (8 caractères min.)", "password", "new-password")}${field("auPw2", "Retape le mot de passe", "password", "new-password")}</div>
       ${msgs()}<button class="btn go big" id="auSignup"${busy}>${authBusy ? "Un instant…" : "Créer mon compte"}</button>
-      <p class="muted" style="margin:0;font-size:.85rem">Tes données servent seulement à faire marcher l'app. Elles sont stockées en Europe et ne sont jamais revendues ni montrées aux joueurs.</p>
+      <p class="muted" style="margin:0;font-size:.85rem">Tes données servent seulement à faire marcher l'app. Elles sont stockées en Europe et ne sont jamais revendues ni montrées aux joueurs. En créant ton compte, tu acceptes la politique de confidentialité ci-dessous.</p>
+      ${privacyDetails()}
       ${later}<p class="muted" style="margin:0;font-size:.8rem">${COPYRIGHT}</p></div>`;
   return `<div class="card onb">${intro}${tabs}
       <div class="form">${field("auEmail", "Email", "email", "email", authEmail)}${field("auPw", "Mot de passe", "password", "current-password")}</div>
@@ -263,6 +264,19 @@ function accountCard(){
     <p class="muted" style="margin:0 0 10px;font-size:.92rem">Ton équipe, tes matchs et ta saison sont sauvegardés en ligne automatiquement. Sans réseau, tout reste gardé sur ce téléphone et part dès que le réseau revient. Se déconnecter efface les données de ce téléphone (elles restent dans ton compte).</p>
     ${logoutArmed ? `<div class="warn" style="margin-bottom:10px">Des changements ne sont pas encore en ligne (pas de réseau ?). Si tu te déconnectes maintenant, ils seront perdus. Touche encore pour confirmer.</div>` : ""}
     <button class="btn" id="accOut">${logoutArmed ? "Me déconnecter quand même" : "Me déconnecter"}</button></div>`;
+}
+// Politique de confidentialité, dépliable (inscription et Réglages).
+function privacyDetails(style = "margin:0"){
+  const P = t => `<p style="margin:0 0 8px">${t}</p>`;
+  return `<details class="priv" style="${style}"><summary>Politique de confidentialité</summary><div class="priv-b" style="font-size:.88rem;margin-top:8px">
+    ${P(`<b>Qui est responsable</b> : Geoffrey Ducobu, créateur de StickMate.`)}
+    ${P(`<b>Ce qui est gardé</b> : ton email et ton mot de passe (chiffré, illisible même pour nous), ton profil (prénom, nom, club, équipe), tes joueurs (nom, postes, notes, minutes), tes matchs et ta saison. Sans compte, tout reste seulement sur ton téléphone.`)}
+    ${P(`<b>Pourquoi</b> : uniquement pour faire marcher l'app que tu utilises (sauvegarde, retrouver ton équipe sur un autre téléphone, chrono partagé avec ton adjoint). Pas de pub, pas de revente, pas de traceurs publicitaires.`)}
+    ${P(`<b>Où</b> : chez Supabase, sur des serveurs en Europe (Francfort). L'app elle-même est servie par GitHub Pages.`)}
+    ${P(`<b>Combien de temps</b> : tant que ton compte existe. « Supprimer mon compte » (Réglages) efface tout.`)}
+    ${P(`<b>Tes joueurs</b> : tu es responsable de ce que tu notes sur eux. Ils sont souvent mineurs : n'indique que ce qui sert au banc (un prénom suffit). Ils ne voient jamais les notes ni les temps visés.`)}
+    ${P(`<b>Tes droits</b> : voir et télécharger tes données, les corriger, les supprimer (tout est dans Réglages). Tu peux aussi te plaindre à l'Autorité de protection des données (autoriteprotectiondonnees.be).`)}
+    <p class="muted" style="margin:0">Mise à jour : 23 octobre 2026.</p></div></details>`;
 }
 // Carte « Tes données » (RGPD) : ce qui est gardé, où, et suppression du compte.
 let deleteArmed = false, deleteMsg = "";
