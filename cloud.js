@@ -269,13 +269,13 @@ function accountCard(){
 function privacyDetails(style = "margin:0"){
   const P = t => `<p style="margin:0 0 8px">${t}</p>`;
   return `<details class="priv" style="${style}"><summary>Politique de confidentialité</summary><div class="priv-b" style="font-size:.88rem;margin-top:8px">
-    ${P(`<b>Qui est responsable</b> : Geoffrey Ducobu, créateur de StickMate.`)}
+    ${P(`<b>Qui est responsable</b> : Geoffrey Ducobu, créateur de StickMate. Contact : <a href="mailto:${REPORT_TO}">${REPORT_TO}</a>.`)}
     ${P(`<b>Ce qui est gardé</b> : ton email et ton mot de passe (chiffré, illisible même pour nous), ton profil (prénom, nom, club, équipe), tes joueurs (nom, postes, notes, minutes), tes matchs et ta saison. Sans compte, tout reste seulement sur ton téléphone.`)}
     ${P(`<b>Pourquoi</b> : uniquement pour faire marcher l'app que tu utilises (sauvegarde, retrouver ton équipe sur un autre téléphone, chrono partagé avec ton adjoint). Pas de pub, pas de revente, pas de traceurs publicitaires.`)}
     ${P(`<b>Où</b> : chez Supabase, sur des serveurs en Europe (Francfort). L'app elle-même est servie par GitHub Pages.`)}
     ${P(`<b>Combien de temps</b> : tant que ton compte existe. « Supprimer mon compte » (Réglages) efface tout.`)}
     ${P(`<b>Tes joueurs</b> : tu es responsable de ce que tu notes sur eux. Ils sont souvent mineurs : n'indique que ce qui sert au banc (un prénom suffit). Ils ne voient jamais les notes ni les temps visés.`)}
-    ${P(`<b>Tes droits</b> : voir et télécharger tes données, les corriger, les supprimer (tout est dans Réglages). Tu peux aussi te plaindre à l'Autorité de protection des données (autoriteprotectiondonnees.be).`)}
+    ${P(`<b>Tes droits</b> : voir et télécharger tes données, les corriger, les supprimer (tout est dans Réglages), ou nous écrire. Tu peux aussi te plaindre à l'Autorité de protection des données (autoriteprotectiondonnees.be).`)}
     <p class="muted" style="margin:0">Mise à jour : 23 octobre 2026.</p></div></details>`;
 }
 // Carte « Tes données » (RGPD) : ce qui est gardé, où, et suppression du compte.
