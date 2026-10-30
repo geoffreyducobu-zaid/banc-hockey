@@ -252,3 +252,26 @@ test("titulaires : leur 1er passage peut être plus court que le minimum de la l
   assert.ok(short > 0, "aucun défenseur titulaire ne sort avant 14'");
   assert.ok(!res.warnings.some(x => /passage de moins/.test(x)), String(res.warnings));
 });
+
+// Un quart où des joueurs ne sortent pas (choisis par le coach) et un maximum de changements de poste.
+test("joueurs qui ne sortent pas d'un quart et changements de poste limités", () => {
+  const ql = rules.qlen, starters = Object.values(ex.lineup);
+  const field = present.filter(p => p.pos.some(q => q !== "G") && !(p.note >= 5));
+  const bench = field.find(p => !starters.includes(p.name)), starter = field.find(p => starters.includes(p.name));
+  const r2 = {...rules, maxMoves: 1};
+  const plan2 = R.buildPlan({
+    positions: Object.keys(LINE).map(id => ({id, gk: id === "G"})),
+    players: present.map(p => ({name:p.name, pos:p.pos, target: [bench.name, starter.name].includes(p.name) ? Math.max(targets[p.name], ql + 4) : targets[p.name], locked: p.note >= 5 && !p.minutes, oneBlock: p.note >= 5, maxStint:p.maxStint || 0, roles:p.roles || [], minFirst:p.minFirst || 0, minStint:minStintOf(p), stay: p.name === bench.name ? [3] : p.name === starter.name ? [0, 3] : []})),
+    lineup: ex.lineup, rules: r2, seed: 4242, iters: 300, saIters: 40000, chains: 4,
+  });
+  assert.ok(!plan2.error, String(plan2.warnings));
+  for (const [n, qs] of [[bench.name, [3]], [starter.name, [0, 3]]]) for (const q of qs) {
+    const on = plan2.segs.reduce((a, s) => a + (n in s.on ? Math.max(0, Math.min(s.b, (q + 1) * ql) - Math.max(s.a, q * ql)) : 0), 0);
+    assert.ok(on > ql - 1e-6, `${n} au Q${q + 1} : ${on}`);
+  }
+  for (let i = 1; i < plan2.segs.length; i++) {
+    const A = plan2.segs[i - 1].on, B = plan2.segs[i].on;
+    const mv = R.chainMax(new Map(Object.entries(A)), new Map(Object.entries(B))); // par joueur qui entre
+    assert.ok(mv <= 1 || plan2.warnings.some(w => w.includes("changer de poste")), `${mv} changements de poste à ${plan2.segs[i].a}`);
+  }
+});
