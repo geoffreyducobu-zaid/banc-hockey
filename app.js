@@ -823,7 +823,24 @@ function render(){
   if (onboard) { v.innerHTML = onboardView(); bindOnboard(); return; }
   if (mode === "coach" && S.pin && !coachOK) { v.innerHTML = pinView(); bindPin(); return; }
   const [view, bind] = VIEWS[mode] || VIEWS.home;
-  v.innerHTML = view(); bind();
+  const keep = keepNumber(v);
+  v.innerHTML = view(); bind(); keep();
+}
+// Case à chiffres en cours d'utilisation (petites flèches) : on remet la même case après le rendu. Sinon le 2e clic
+// tombe sur une case toute neuve, le navigateur le prend pour un double-clic qui sélectionne le chiffre.
+function keepNumber(v){
+  const a = document.activeElement;
+  if (!a || a.tagName !== "INPUT" || a.type !== "number" || !v.contains(a)) return () => {};
+  const sig = el => [...el.attributes].filter(x => x.name.startsWith("data-") || x.name === "aria-label").map(x => x.name + "=" + x.value).sort().join("|");
+  const k = sig(a);
+  return () => {
+    const n = [...v.querySelectorAll('input[type="number"]')].find(el => sig(el) === k);
+    if (!n || n.disabled) return;
+    [...a.attributes].forEach(x => { if (!n.hasAttribute(x.name)) a.removeAttribute(x.name); });
+    [...n.attributes].forEach(x => a.setAttribute(x.name, x.value));
+    if (a.value !== n.value) a.value = n.value;
+    n.replaceWith(a); a.focus({preventScroll: true});
+  };
 }
 function goTo(m){ if (m === mode) return; mode = m; inc = null; helpOpen = null; render(); window.scrollTo(0, 0); }
 // Dans le plan et pendant le match : place générale (« Milieu déf. »), sans le côté. Seule la compo de départ dit le côté.
