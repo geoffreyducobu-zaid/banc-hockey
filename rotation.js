@@ -39,10 +39,11 @@
   function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
   // Règle k pour la période q (0 = 1er quart ou 1re mi-temps) : l'exception de la période si elle existe, sinon la règle du match.
-  // Règles réglables par période : startBlock, endBlock, maxBench, maxEntries, maxMoves, breakChanges (pause avant la période), gkOnlyAtBreaks.
+  // Règles réglables par période : startBlock, endBlock, maxBench, maxEntries, breakChanges (pause avant la période), gkOnlyAtBreaks.
   // Exception propre à une période : stay = joueurs qui ne doivent pas sortir de cette période (passés au moteur par joueur, p.stay).
   function rq(R, q, k) {
     if (k === 'startBlock' && q === 0 && !R.per && R.firstChange != null) return R.firstChange; // ancien format
+    if (k === 'maxMoves') return R[k]; // vaut pour tout le match
     const o = R.per && R.per[q];
     return o && o[k] !== undefined && o[k] !== null ? o[k] : R[k];
   }
@@ -440,7 +441,8 @@
       if (sc < bestScore) { bestScore = sc; best = res; }
     }
     const start = best;
-    const runSA = seq => { I.seqPos = seq; let b = null; for (let c = 0; c < (input.chains || 3); c++) { const sa = anneal(I, start, rand, input.saIters || 30000); if (!b || sa.saScore < b.saScore) b = sa; } return b; };
+    // seq : calcul fin des postes, plus lent, donc deux fois moins de pas
+    const runSA = seq => { I.seqPos = seq; let b = null; for (let c = 0; c < (input.chains || 3); c++) { const sa = anneal(I, start, rand, Math.round((input.saIters || 30000) * (seq ? 0.5 : 1))); if (!b || sa.saScore < b.saScore) b = sa; } return b; };
     // changements de poste au-delà du maximum du coach, pour un plan
     const movesOver = segs => { let n = 0; for (let i = 1; i < segs.length; i++) { const mm = rq(R, Math.min(R.quarters - 1, Math.floor((segs[i].a + EPS) / R.qlen)), 'maxMoves'); if (mm == null) continue; let k = 0; for (const [p, q] of segs[i].on) if (segs[i - 1].on.has(p) && segs[i - 1].on.get(p) !== q) k++; n += Math.max(0, k - mm); } return n; };
     let bestSA = runSA(false);

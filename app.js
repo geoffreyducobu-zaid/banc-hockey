@@ -1255,14 +1255,13 @@ function seasonTab(){
 
 /* ---------- règles de rotation ---------- */
 // Règles du match + exceptions par période (S.rules.per[q], q = 0 pour le 1er quart ou la 1re mi-temps).
-// Ces 7 règles (et les joueurs qui ne sortent pas : stay) peuvent changer d'une période à l'autre ; les autres valent pour tout le match
+// Ces 6 règles (et les joueurs qui ne sortent pas : stay) peuvent changer d'une période à l'autre ; les autres valent pour tout le match
 // (un passage peut commencer dans un quart et finir dans le suivant).
 const PER_RULES = [
   ["startBlock", "num", "Pas de changement avant", "min", "Après le début du quart."],
   ["endBlock", "num", "Rien dans les dernières", "min", "Avant la fin du quart."],
   ["maxBench", "num", "Banc maximum dans le quart", "min", "Un joueur de champ ne reste jamais plus longtemps sur le banc dans un même quart."],
   ["maxEntries", "num", "Joueurs qui entrent en même temps", "max", "Au même moment."],
-  ["maxMoves", "num", "Changements de poste sur le terrain", "max", "À chaque changement, joueurs déjà sur le terrain qui changent de place, au maximum."],
   ["breakChanges", "bool", "Changements à la pause", "", "Le plan peut faire entrer des joueurs pendant la pause."],
   ["gkOnlyAtBreaks", "bool", "Gardien changé seulement à la pause", "", "Jamais de changement de gardien pendant le jeu."],
 ];
@@ -1313,7 +1312,7 @@ function rulesTimeline(){
     const brk = q > 0 ? `<div class="fz-brk${R.rq(r, q, "breakChanges") ? " on" : ""}">${R.rq(r, q, "breakChanges") ? "Changements à la pause" : "Pas de changement à la pause"}</div>` : "";
     return `${brk}<div class="fz${perDiff(q).length ? " diff" : ""}"><div class="fz-h"><b>${pShort(q+1)}</b><span>${b > a ? `changements de ${minTxt(a)} à ${minTxt(b)}` : "aucun changement"}</span></div>
       <div class="fz-t"><i style="left:${a/ql*100}%;width:${(b-a)/ql*100}%"></i></div>
-      <div class="fz-tags"><span>banc max ${minTxt(R.rq(r, q, "maxBench"))}</span><span>${R.rq(r, q, "maxEntries")} entrées max</span><span>${R.rq(r, q, "maxMoves")} chang. de poste max</span>${stayOfQ(q).length ? `<span>${stayOfQ(q).length} ne sort${stayOfQ(q).length > 1 ? "ent" : ""} pas</span>` : ""}${R.rq(r, q, "gkOnlyAtBreaks") ? "" : "<span>gardien pendant le jeu</span>"}</div></div>`;
+      <div class="fz-tags"><span>banc max ${minTxt(R.rq(r, q, "maxBench"))}</span><span>${R.rq(r, q, "maxEntries")} entrées max</span>${stayOfQ(q).length ? `<span>${stayOfQ(q).length} ne sort${stayOfQ(q).length > 1 ? "ent" : ""} pas</span>` : ""}${R.rq(r, q, "gkOnlyAtBreaks") ? "" : "<span>gardien pendant le jeu</span>"}</div></div>`;
   }).join("")}</div>`;
 }
 function ruleRow(k, label, unit, help, val, attrs){
@@ -1373,6 +1372,7 @@ function rulesBody(){
       <div class="rline">${[["firstDef","minDef","Défense"],["firstMid","minMid","Milieu"],["firstAtt","minAtt","Attaque"]].map(([k,m,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k] ?? r[m])}" aria-label="Minimum avant de sortir pour un titulaire au début du match, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. ${halves() ? "La pause de la mi-temps remet" : "La pause entre deux quarts remet"} ce compteur à zéro.</div></div>
       <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
+    ${ruleRow("maxMoves", "Changements de poste sur le terrain", "max", "À chaque changement, joueurs déjà sur le terrain qui changent de place, au maximum. À 0, celui qui entre prend toujours la place de celui qui sort.", r.maxMoves, 'data-rule="maxMoves"')}
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
     ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
   </div>

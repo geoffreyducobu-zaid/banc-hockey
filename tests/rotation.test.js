@@ -258,7 +258,7 @@ test("joueurs qui ne sortent pas d'un quart et changements de poste limités", (
   const ql = rules.qlen, starters = Object.values(ex.lineup);
   const field = present.filter(p => p.pos.some(q => q !== "G") && !(p.note >= 5));
   const bench = field.find(p => !starters.includes(p.name)), starter = field.find(p => starters.includes(p.name));
-  const r2 = {...rules, maxMoves: 1, per: {...(rules.per || {}), 3: {stay: []}}};
+  const r2 = {...rules, maxMoves: 1};
   const plan2 = R.buildPlan({
     positions: Object.keys(LINE).map(id => ({id, gk: id === "G"})),
     players: present.map(p => ({name:p.name, pos:p.pos, target: [bench.name, starter.name].includes(p.name) ? Math.max(targets[p.name], ql + 4) : targets[p.name], locked: p.note >= 5 && !p.minutes, oneBlock: p.note >= 5, maxStint:p.maxStint || 0, roles:p.roles || [], minFirst:p.minFirst || 0, minStint:minStintOf(p), stay: p.name === bench.name ? [3] : p.name === starter.name ? [0, 3] : []})),
