@@ -89,7 +89,28 @@ function bindHelp(){
     const [m, a, s] = b.dataset.goto.split(":");
     helpOpen = null;
     if (m === "coach") { coachTab = a; if (s) coachStep = s; }
-    if (m === "settings") setOpen = a || null;
+    if (m === "settings") setOpen = a === "help" ? null : a || null;
     if (m === mode) { render(); window.scrollTo(0, 0); } else goTo(m);
+    if (m === "settings" && a === "help") { helpOpen = s; render(); window.scrollTo(0, 0); } // goTo remet helpOpen à zéro
   }));
+}
+
+// Accueil : « Premiers pas » pour un nouveau coach. Chaque étape se coche toute seule quand elle est faite.
+function startSteps(){
+  const ids = PRESETS[S.preset].map(p => p[0]);
+  return [
+    [!!S.profile?.first, "Remplis ton profil", "Ton prénom, ton club et ton équipe.", "settings:prof"],
+    [!!S.pin, "Choisis ton code de verrouillage", "Il garde les notes et les temps de jeu pour toi.", "settings:pin"],
+    [S.squad.length >= ids.length, "Ajoute tes joueurs", `Au moins ${ids.length} joueurs, et choisis ton système de jeu.`, "coach:squad"],
+    [S.squad.length > 0 && S.squad.every(p => (p.pos || []).length), "Donne une place à chaque joueur", "Dans l'ordre de préférence, avec D et B pour les corners.", "coach:squad"],
+    [ids.every(q => S.lineup[q]), "Prépare ton premier match", "Présents, compo de départ et temps de jeu.", "coach:match:compo"],
+    [!!S.plan, "Génère le plan de rotation", "Puis touche « Utiliser pour le match ».", "coach:match:time"],
+  ].map(([done, t, d, go]) => ({done, t, d, go}));
+}
+function startCard(){
+  const st = startSteps(), left = st.filter(s => !s.done).length;
+  if (!left || prefs.hideStart) return `<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><b>Besoin d'aide ?</b><div class="row" style="gap:8px"><button class="btn small" data-goto="settings:help:guide">Guide pas à pas</button><button class="btn small" data-goto="settings:help:faq">Questions fréquentes</button></div></div></div>`;
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Premiers pas</h2><span class="muted" style="font-size:.9rem">${st.length - left} sur ${st.length}</span></div>
+    <ol class="startl">${st.map(s => `<li class="${s.done ? "dn" : ""}"><span class="sk" aria-hidden="true">${s.done ? "✓" : ""}</span><span class="st"><b>${esc(s.t)}</b><span class="muted">${esc(s.d)}</span></span>${s.done ? "" : `<button class="btn small" data-goto="${s.go}">Y aller ›</button>`}</li>`).join("")}</ol>
+    <div class="row" style="margin-top:10px;justify-content:space-between;flex-wrap:wrap;gap:8px"><button class="btn small" data-goto="settings:help:guide">Guide pas à pas</button><button class="btn small" id="hideStart">Masquer</button></div></div>`;
 }

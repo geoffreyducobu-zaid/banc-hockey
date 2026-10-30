@@ -1040,11 +1040,11 @@ function homeView(){
   const ready = !!S.plan, title = matchTitle(), hi = `Salut${S.profile?.first ? ` ${esc(S.profile.first)}` : ""} !`;
   if (!S.squad.length) return pinNudge() + `<section class="hero"><span class="hero-k">${hi}</span><span class="hero-t">Bienvenue sur StickMate</span><span class="hero-s">Ton équipe est encore vide. Commence par créer ton équipe et tes joueurs.</span></section>
   <button class="btn dark big" id="hCoach">Créer mon équipe →</button>
-  ${accountNudge()}${howTo()}`;
+  ${accountNudge()}${startCard()}`;
   return pinNudge() + `<section class="hero"><span class="hero-k">${hi} · Prochain match</span><span class="hero-t">${esc(S.matchLabel || "Ton prochain match")}</span>${S.matchDate && title !== S.matchLabel ? `<span class="hero-s">${esc(title.replace(S.matchLabel ? S.matchLabel + " · " : "", ""))}</span>` : ""}<span class="hero-s">${ready ? "Le plan de rotation est prêt." : "Pas encore de plan de rotation pour ce match."}</span></section>
   <div class="tiles"><div class="tile"><b>${present().length}</b><span>présents</span></div><div class="tile"><b>${ready ? visChanges(S.plan).length : "–"}</b><span>changements</span></div><div class="tile"><b>${esc(S.preset)}</b><span>système</span></div></div>
   ${ready ? `<button class="btn dark big" id="hMatch">Ouvrir le match →</button>` : `<button class="btn primary big" id="hCoach">Préparer le match →</button>`}
-  ${accountNudge()}${S.plan ? "" : howTo()}`;
+  ${accountNudge()}${startCard()}`;
 }
 // Sans code, les notes et les temps visés sont visibles par tous : on le demande dès l'Accueil.
 function pinNudge(){
@@ -1058,22 +1058,13 @@ function bindPinSave(){
   digitsOnly();
   $("#pinSave")?.addEventListener("click", () => { const c = $("#pinSet").value.trim(); if (!pinOk(c)) { $("#pinMsg").textContent = "Le code doit faire 4 ou 6 chiffres."; return; } if ($("#pinSet2").value.trim() !== c) { $("#pinMsg").textContent = "Les deux codes ne sont pas pareils."; return; } S.pin = c; persist(); coachOK = true; render(); const m = $("#pinMsg"); if (m) m.textContent = "Code enregistré."; });
 }
-function howTo(){
-  return `<div class="card"><h2>Comment ça marche</h2>
-    <ol class="steps">
-      <li><b>Coach</b> : crée ton équipe et tes joueurs, avec leurs postes.</li>
-      <li><b>Coach</b>, avant le match : coche les présents, choisis la compo de départ et génère le plan de rotation.</li>
-      <li><b>Match</b> : lance le chrono. ${+S.rules.alertSec} secondes avant chaque changement, l'app te prévient (son et écran).</li>
-      <li>Un blessé, un carton ? Touche « Imprévu » : le plan se recalcule tout seul.</li>
-      <li><b>Réglages</b> : son des alertes, thème, ton profil, règles de rotation, codes et sauvegarde.</li>
-    </ol>
-  </div>`;
-}
 function bindHome(){
   $("#hCoach")?.addEventListener("click", () => goTo("coach"));
   $("#hMatch")?.addEventListener("click", () => goTo("match"));
   bindPinSave();
   bindAccountNudge();
+  bindHelp();
+  $("#hideStart")?.addEventListener("click", () => { prefs.hideStart = true; savePrefs(); render(); });
 }
 
 /* ---------- réglages ---------- */
