@@ -151,6 +151,8 @@ function setSystem(to, keep){
   S.system = to;
   S.matches.forEach(m => { if (m.id !== S.curMatch && !matchUsed(m) && !m.ownSys) { m.preset = to; m.lineup = {}; m.plan = m.prevPlan = m.basePlan = null; } });
   followSystem();
+  const none = S.squad.filter(p => p.name.trim() && !(p.pos || []).length).map(p => p.name);
+  if (ready) { posNote = `Places en ${to} reprises de « Places en ».${none.length ? ` Sans place en ${to} : ${none.join(", ")}.` : ""}`; return; }
   posNote = keep ? `Les postes ont été adaptés au ${to}. Vérifie-les joueur par joueur.` : `Postes effacés : donne à chaque joueur ses places en ${to}.`;
 }
 // match enregistré ou commencé : il garde son système
@@ -523,7 +525,9 @@ function replanBase(T, sw){
   const Tg = computeTargets();
   // Plan automatique : un joueur à 0 minute reste hors du plan, sauf s'il a joué ou si le coach le fait entrer.
   const sits = x => S.plan.timeMode === "notes" && !(S.plan.targets?.[x.name] > 0) && !(playedUntil(S.plan, x.name, T) > 0) && !eventsOf().some(e => e.inP === x.name) && inc?.inP !== x.name;
-  const posOf = x => { const P = sw || sys !== teamSys() ? calcPos(x, sys) : playerPos(x, sys), L = sw ? [...P] : [...P, ...extraPos(x.name, T).filter(q => !P.includes(q))], v = sw ? sw.on[x.name] : invPos(x.name, T); return v ? [v, ...L.filter(q => q !== v)] : L; };
+  // Un joueur déjà sur le terrain garde aussi la place où il joue (même hors de ses places, ex. après un changement de système).
+  const curOn = sw ? {} : (segAt(S.plan, T)?.on || {});
+  const posOf = x => { const P = sw || sys !== teamSys() ? calcPos(x, sys) : playerPos(x, sys), L = sw ? [...P] : [...new Set([...P, ...extraPos(x.name, T), ...(curOn[x.name] ? [curOn[x.name]] : [])])], v = sw ? sw.on[x.name] : invPos(x.name, T); return v ? [v, ...L.filter(q => q !== v)] : L; };
   const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:posOf(x), rank: placeRank(posOf(x), sys), target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x), stay: stayOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])])}));
   // places laissées vides par un carton rouge (dans le système en place ; un changement de système dit lui-même lesquelles)
   const vacate = sw ? sw.vacate : [...(se?.vacate || []), ...eventsOf().filter(e => e.type==="rouge" && (!se || e.t >= se.t - 1e-6)).map(e => e.pos)];
@@ -532,7 +536,7 @@ function replanBase(T, sw){
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
 }
-function applyPlan(res){ ["timeMode", "rulesSig", "fmt"].forEach(k => { if (S.plan?.[k]) res[k] = S.plan[k]; }); if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
+function applyPlan(res){ res = keepFutureSys(res); ["timeMode", "rulesSig", "fmt"].forEach(k => { if (S.plan?.[k]) res[k] = S.plan[k]; }); if (!S.basePlan) S.basePlan = S.plan; S.prevPlan = S.plan; S.plan = res; inc = null; incBusy = false; incMsg = ""; syncDone(); pushClock(); persist(); render(); }
 // Fin de blessure. catchUp = true : le plan lui rend les minutes manquées (reprises un peu sur les autres).
 // false : il ne rattrape rien, il garde seulement ce qui était prévu pour lui après ce moment avant sa blessure.
 function endInjury(n, catchUp = true){
@@ -679,7 +683,9 @@ function autoSysAsg(on, from, to){
 // null si quelqu'un n'a plus de place possible à un moment : on recalcule alors la suite du plan.
 // loose : si personne ne connaît une place à un moment, on y met quand même quelqu'un (hors de ses places), le moins souvent possible.
 function replacePlan(plan, ev, loose){
-  const T = ev.t, ids = PRESETS[ev.to].map(x => x[0]).filter(q => !ev.vacate.includes(q)), pl = n => S.squad.find(x => x.name === n);
+  // Places laissées vides (à 10 après un carton) : seulement tant qu'il manque quelqu'un.
+  const all = PRESETS[ev.to].map(x => x[0]), open = all.filter(q => !ev.vacate.includes(q)), pl = n => S.squad.find(x => x.name === n);
+  const T = ev.t, idsFor = k => k <= open.length ? open : all;
   const segs = []; let prev = null;
   for (const s of plan.segs) {
     if (s.b <= T + 1e-6) { segs.push({...s, on:{...s.on}}); continue; }
@@ -687,7 +693,7 @@ function replacePlan(plan, ev, loose){
     let on;
     if (!prev) { const N = Object.keys(s.on); if (N.length !== Object.keys(ev.on).length || N.some(n => !(n in ev.on))) return null; on = {...ev.on}; }
     else {
-      on = assignPlaces(Object.keys(s.on), ids, (n, q) => {
+      on = assignPlaces(Object.keys(s.on), idsFor(Object.keys(s.on).length), (n, q) => {
         const gk = s.on[n] === "G"; if (gk !== (q === "G")) return 1e9;
         const k = ev.on[n] === q ? 0 : placeRk(pl(n), ev.to, q); if (k < 0) return loose ? 1000 : 1e9;
         return k * 2 + (prev[n] && prev[n] !== q ? 5 : 0);
@@ -697,6 +703,33 @@ function replacePlan(plan, ev, loose){
     segs.push({...s, a:Math.max(s.a, T), on}); prev = on;
   }
   return {...plan, segs, changes:segChanges(segs), events:[...(plan.events || []), ev]};
+}
+// Un changement de système prévu plus tard (à la pause) reste valable après un imprévu :
+// le plan recalculé est fait dans l'ancien système, on refait le passage au nouveau système au même moment,
+// en gardant la place prévue de chacun quand c'est possible.
+function keepFutureSys(res){
+  const now = Math.floor(matchT()*10)/10, fut = (res.events || []).filter(e => e.type === "systeme" && e.t > now + 1e-6).sort((a, b) => a.t - b.t);
+  if (!fut.length) return res;
+  let r = {...res, events: res.events.filter(e => !fut.includes(e))};
+  const pl = n => S.squad.find(x => x.name === n);
+  for (const e of fut) {
+    const on0 = segAt(r, e.t + 1e-4)?.on; if (!on0) continue;
+    const from = (r.events.filter(x => x.type === "systeme" && x.t <= e.t).pop() || {}).to || S.preset;
+    const ids = PRESETS[e.to].map(x => x[0]), xy = (q, s) => { const m = posMeta(q, s); return [m.x, m.y]; };
+    const on = assignPlaces(Object.keys(on0), ids, (n, q) => {
+      if ((on0[n] === "G") !== (q === "G")) return 1e9;
+      if (e.on[n] === q) return 0;
+      const k = placeRk(pl(n), e.to, q), [x1, y1] = xy(on0[n], from), [x2, y2] = xy(q, e.to);
+      return (k < 0 ? 100 : 1 + k * 10) + Math.hypot(x2 - x1, y2 - y1) / 10;
+    });
+    if (!on) continue;
+    // Place vide pour de bon seulement à cause d'un carton rouge (un carton temporaire finit, le joueur revient).
+    const reds = r.events.filter(x => x.type === "rouge" && x.t <= e.t + 1e-6).length;
+    const ev = {...e, from, on, vacate: ids.filter(q => !Object.values(on).includes(q)).slice(0, reds)};
+    const r2 = replacePlan(r, ev) || replacePlan(r, ev, true);
+    if (r2) r = r2;
+  }
+  return r;
 }
 function sysRecalc(ev){
   const r2 = R.replan(S.plan, replanBase(ev.t, ev));
@@ -938,7 +971,7 @@ async function loadSeason(){
 }
 async function saveMatch(){
   const sh = sheet();
-  const rec = {match: S.curMatch || null, date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => !["bless", "libre", "inverse", "retour"].includes(e.type)).map(e => ({type:e.type, player:e.player}))};
+  const rec = {match: S.curMatch || null, date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => !["bless", "libre", "inverse", "retour", "systeme"].includes(e.type)).map(e => ({type:e.type, player:e.player}))};
   for (const [n,m] of Object.entries(S.plan.played)) rec.minutes[n] = Math.round(m*10)/10;
   for (const [n,m] of Object.entries(S.plan.targets||{})) rec.targets[n] = Math.round(m*10)/10;
   try {
@@ -1508,7 +1541,7 @@ function squadTab(){
   const sys = teamSys(), others = Object.keys(PRESETS).filter(k => k !== sys), ps = squadPS();
   const rows = S.squad.map((p,i) => { const L = playerPos(p, ps); return `<tr>
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
-    <td><div class="posed">${placeUnits(L, ps).map(([ids, nm, sh], k) => `<button class="pchip ${posMeta(ids[0], ps).line}" data-rmpos="${i}" data-q="${esc(ids[0])}" title="Retirer ${esc(nm)}">${k+1}. ${esc(sh)} ✕</button>`).join("")}${ps !== sys && !L.some(q => q !== "G") ? `<small class="muted">aucune place</small>` : ""}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${placeUnits(PRESETS[ps].map(x => x[0]), ps).filter(([ids]) => !ids.some(q => L.includes(q))).map(([ids, nm]) => `<option value="${ids[0]}">${esc(nm)}</option>`).join("")}</select></div></td>
+    <td><div class="posed">${placeUnits(L, ps).map(([ids, nm, sh], k) => `<button class="pchip ${posMeta(ids[0], ps).line}" data-rmpos="${i}" data-q="${esc(ids[0])}" title="Retirer ${esc(nm)}">${k+1}. ${esc(sh)} ✕</button>`).join("")}${ps !== sys && (!L.length || ((p.pos || []).some(q => q !== "G") && !L.some(q => q !== "G"))) ? `<small class="muted">aucune place</small>` : ""}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${placeUnits(PRESETS[ps].map(x => x[0]), ps).filter(([ids]) => !ids.some(q => L.includes(q))).map(([ids, nm]) => `<option value="${ids[0]}">${esc(nm)}</option>`).join("")}</select></div></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
     <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`; }).join("");
   return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
@@ -1968,7 +2001,7 @@ function bindCoach(){
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
   $("#teamSys")?.addEventListener("change", e => { const to = e.target.value; posNote = "";
     // Places déjà préparées pour ce système (« Places en ») : on les reprend telles quelles, sans question.
-    if (S.squad.some(p => p.posBy?.[to]?.some(q => q !== "G"))) { setSystem(to, true); posNote = ""; persist(); render(); }
+    if (S.squad.some(p => p.posBy?.[to]?.some(q => q !== "G"))) { setSystem(to, true); persist(); render(); }
     else if (S.squad.some(p => p.pos.some(q => q !== "G"))) { sysAsk = to; render(); } else { setSystem(to, false); posNote = ""; persist(); render(); } });
   $("#sysKeep")?.addEventListener("click", () => { setSystem(sysAsk, true); sysAsk = null; persist(); render(); });
   $("#sysClear")?.addEventListener("click", () => { setSystem(sysAsk, false); sysAsk = null; persist(); render(); });
