@@ -275,3 +275,19 @@ test("joueurs qui ne sortent pas d'un quart et changements de poste limités", (
     assert.ok(mv <= 1 || plan2.warnings.some(w => w.includes("changer de poste")), `${mv} changements de poste à ${plan2.segs[i].a}`);
   }
 });
+
+test("banc maximum d'affilée, pauses comprises : aucun joueur de champ n'attend plus longtemps", () => {
+  const r2 = {...rules, maxBenchRun: 10};
+  const plan2 = R.buildPlan({
+    positions: Object.keys(LINE).map(id => ({id, gk: id === "G"})),
+    players: present.map(p => ({name:p.name, pos:p.pos, target:targets[p.name], locked: p.note >= 5 && !p.minutes, oneBlock: p.note >= 5, maxStint:p.maxStint || 0, roles:p.roles || [], minFirst:p.minFirst || 0, minStint:minStintOf(p)})),
+    lineup: ex.lineup, rules: r2, seed: 4242, iters: 300, saIters: 40000, chains: 4,
+  });
+  assert.ok(!plan2.error, String(plan2.warnings));
+  assert.deepStrictEqual(plan2.warnings, []);
+  for (const p of present) {
+    if (!p.pos.some(q => q !== "G") || p.note >= 5) continue;
+    let t = 0; for (const [a, b] of plan2.intervals[p.name] || []) { assert.ok(a - t <= 10 + EPS, `${p.name} : ${a - t}' sur le banc`); t = b; }
+    assert.ok(END - t <= 10 + EPS, `${p.name} : ${END - t}' sur le banc à la fin`);
+  }
+});

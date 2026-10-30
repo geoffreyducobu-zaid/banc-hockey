@@ -47,6 +47,8 @@
     const o = R.per && R.per[q];
     return o && o[k] !== undefined && o[k] !== null ? o[k] : R[k];
   }
+  // Banc maximum d'affilée sur tout le match, pauses comprises (en minutes de jeu). Vide ou 0 = pas de limite.
+  const benchRun = R => R.maxBenchRun > 0 ? +R.maxBenchRun : 0;
 
   // Ancien format (firstChange = 1er changement du Q1) -> exceptions par période (per). firstChange reste écrit
   // pour les anciennes versions de l'app ; quand per existe, le moteur l'ignore.
@@ -146,7 +148,8 @@
         if (!canEnter(p)) return false;
         const bq = Math.max(st[p].since, qStart(t));
         const nextOpp = Math.min(next, qEnd);
-        return (nextOpp - bq) > rq(R, qi, 'maxBench') + EPS && I.fieldPlayer[p];
+        if (!I.fieldPlayer[p]) return false;
+        return (nextOpp - bq) > rq(R, qi, 'maxBench') + EPS || (benchRun(R) && next - st[p].since > benchRun(R) + EPS);
       });
       // candidates
       const ins = [], outs = [];
@@ -215,8 +218,11 @@
       let t = R.from || 0; const off = [];
       for (const [a, b] of iv[p]) { if (a > t) off.push([t, a]); t = b; }
       if (t < END) off.push([t, END]);
-      for (const [a, b] of off) for (let q = 0; q < R.quarters; q++) {
-        const qa = q * R.qlen; if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > rq(R, q, 'maxBench') + EPS) v += 1;
+      for (const [a, b] of off) {
+        if (benchRun(R) && b - a > benchRun(R) + EPS) v += 1;
+        for (let q = 0; q < R.quarters; q++) {
+          const qa = q * R.qlen; if (Math.min(b, qa + R.qlen) - Math.max(a, qa) > rq(R, q, 'maxBench') + EPS) v += 1;
+        }
       }
     }
     for (let i = 1; i < res.segs.length; i++) {
@@ -302,6 +308,7 @@
     function benchPen(a, b) {
       let pen = 0;
       if (b - a < R.minBench - EPS && a > EPS && b < END) pen += F0 ? 300 + (R.minBench - (b - a)) * 30 : 150; // aussi pour un joueur sorti juste avant un imprévu
+      const mr = benchRun(R); if (mr && b - a > mr + EPS) pen += 300 + (b - a - mr) * 30;
       for (let q = 0; q < R.quarters; q++) {
         const qa = q * R.qlen, mb = rq(R, q, 'maxBench'); const ov = Math.min(b, qa + R.qlen) - Math.max(a, qa);
         if (ov > mb + EPS) pen += 300 + (ov - mb) * 30;
@@ -693,6 +700,8 @@
           const d = Math.min(b, qa + R.qlen) - Math.max(a, qa);
           if (d > mb + EPS) note(p.name + 'b' + q, `${p.name} : plus de ${fmtMin(mb)} sur le banc ${R.quarters === 2 ? 'en' : 'au'} ${pName(q)}`, d, true);
         }
+        const mr = benchRun(R);
+        if (mr && b - a > mr + EPS) note(p.name + 'br', `${p.name} : plus de ${fmtMin(mr)} d'affilée sur le banc, pauses comprises`, b - a, true);
         if (a > EPS && b < END - EPS && b - a < R.minBench - EPS && !forced(b)) note(p.name + 'r', `${p.name} : revient après moins de ${fmtMin(R.minBench)} sur le banc`, b - a, false);
       }
       const played = iv.reduce((s, [a, b]) => s + b - a, 0), tg = c.targets[p.name] || 0;
