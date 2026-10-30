@@ -856,11 +856,11 @@ function changeLines(ch){
   let html = pairChanges(ch).map(pr => { const mv = chainOf(pr); return `<div class="swap">
       <div class="s-names">
         <div class="s-row s-in"><span class="mk in" aria-hidden="true">↑</span><span class="big"><span class="sr">Entre : </span>${esc(pr.inP || "—")}</span></div>
-        <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}</span></div>
+        <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}${pr.outP && pr.outQ ? ` <span class="s-pos">(${esc(gName(pr.outQ))})</span>` : ""}</span></div>
         ${mv.map((g, i) => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span><b>${esc(i + 1 < mv.length ? mv[i + 1].p : pr.inP)}</b> prend la place de <b>${esc(g.p)}</b> (${esc(lc(g.a))}), ${esc(g.p)} passe ${esc(lc(g.b))}</span></span></div>`).join("")}
       </div>
       ${mv.length ? movePitch(mv, pr.inQ) : miniPitch(pr.inQ || pr.outQ)}
-      ${pr.inP && !mv.length ? `<div class="where">${pill(pr.inQ)} ${esc(gName(pr.inQ))}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(lc(pr.outQ))})</span>` : ""}</div>` : ""}
+      ${pr.inP && !mv.length ? `<div class="where">${pill(pr.inQ)} ${esc(gName(pr.inQ))}</div>` : ""}
     </div>`; }).join("");
   const mg = moveGroups({...ch, moves: ch.moves.filter((m, i) => !usedM.has(i))});
   if (mg.length) html += `<div class="reorg"><div class="reorg-x"><div class="reorg-t">Changements de poste</div>${mg.map(g => g.swap
@@ -907,7 +907,7 @@ function matchView(){
   const upList = qChanges.map(c => {
     const isBrk = Math.abs(c.t/ql - Math.round(c.t/ql)) < 1e-6;
     const lab = isBrk ? "Pause" : fmtQ(c.t).label;
-    return `<div class="up-item${(C.done.includes(c.t) || c.t < t - 0.4) ? " done":""}"><div class="up-t">${lab}</div><div class="up-l">${pairChanges(c).map(pr=>`<div><span class="i">${esc(pr.inP||"—")}</span> remplace <span class="o">${esc(pr.outP||"—")}</span> ${pr.inQ?pill(pr.inQ):""}</div>`).join("")}${moveGroups(c).map(g=>`<div class="m">${g.swap ? "⇄" : "→"} ${esc(moveText(g))}</div>`).join("")}</div></div>`;}).join("") || `<p class="muted">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
+    return `<div class="up-item${(C.done.includes(c.t) || c.t < t - 0.4) ? " done":""}"><div class="up-t">${lab}</div><div class="up-l">${pairChanges(c).map(pr=>`<div><span class="i">${esc(pr.inP||"—")}</span> remplace <span class="o">${esc(pr.outP||"—")}${pr.outP && pr.outQ ? ` <small class="op">(${esc(gName(pr.outQ))})</small>` : ""}</span> ${pr.inQ?pill(pr.inQ):""}</div>`).join("")}${moveGroups(c).map(g=>`<div class="m">${g.swap ? "⇄" : "→"} ${esc(moveText(g))}</div>`).join("")}</div></div>`;}).join("") || `<p class="muted">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
   const banners = activeBanners(t);
   const startBtn = C.running ? `<button class="btn big" id="pause">❚❚ Pause</button>` : (atEnd ? (C.q < S.rules.quarters ? `<button class="btn big primary" id="nextQ">Lancer ${pThe(C.q+1)} ▸</button>` : `<span class="alert-title">Fin du match</span>`) : `<button class="btn big go" id="start">▶ ${el>0?"Reprendre":"Démarrer "+pThe(C.q)}</button>`);
   if (far) return `<div class="far">

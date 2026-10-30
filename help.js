@@ -27,7 +27,7 @@ const GUIDE = [
   ], go: [["coach:match:pres", "Présents"], ["coach:match:time", "Temps de jeu"], ["coach:match:rules", "Règles"]]},
   {t: "Pendant le match", steps: [
     `Ouvre la page <b>Match</b> et touche <b>« ▶ Démarrer »</b> au coup d'envoi. « ❚❚ Pause » arrête le chrono.`,
-    `Avant chaque changement, l'app te prévient (son et écran) : <b>« Préparez-vous »</b>, puis <b>« Changement maintenant »</b>. La carte dit qui entre, qui sort et à quelle place. Une ligne orange signale un joueur qui change de place sur le terrain.`,
+    `Avant chaque changement, l'app te prévient (son et écran) : <b>« Préparez-vous »</b>, puis <b>« Changement maintenant »</b>. La carte dit qui entre, qui sort (avec entre parenthèses la place qu'il quitte) et à quelle place joue celui qui entre. Une ligne orange signale un joueur qui change de place sur le terrain.`,
     `La carte passe toute seule au changement suivant. Les onglets en bas montrent les changements du quart, le terrain et le score.`,
     `À la fin d'un quart, touche « Lancer le quart suivant ». Les changements de la pause s'affichent pendant la pause.`,
     `<b>⚠ Imprévu</b> : blessure, carton vert (2'), jaune (5' ou 10') ou rouge. Le plan se recalcule tout seul. Un blessé qui revient : touche « Fin de blessure ».`,
