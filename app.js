@@ -739,7 +739,7 @@ function render(){
   const [view, bind] = VIEWS[mode] || VIEWS.home;
   v.innerHTML = view(); bind();
 }
-function goTo(m){ if (m === mode) return; mode = m; inc = null; render(); window.scrollTo(0, 0); }
+function goTo(m){ if (m === mode) return; mode = m; inc = null; helpOpen = null; render(); window.scrollTo(0, 0); }
 function pill(id){ const m = posMeta(id); return `<span class="pos ${m.line}" title="${esc(m.label)}">${esc(m.short)}</span>`; }
 
 function pairChanges(ch){
@@ -1096,7 +1096,13 @@ function settingsView(){
   const locked = S.pin && !coachOK;
   const cur = hexOk(S.color) ? S.color.toLowerCase() : DEFAULT_COLOR;
   const themeName = {auto:"Auto", light:"Clair", dark:"Sombre"}[prefs.theme] || "Auto";
-  return `<div class="grp-t">Pendant le match</div>
+  if (helpOpen) return helpCard();
+  return `<div class="grp-t">Aide</div>
+  <div class="card grp">
+    ${helpRows()}
+    ${REPORT_ON ? `<div class="set"><div><b>Signaler un souci</b><div class="muted">Un bug, quelque chose de pas clair, une idée : ça ouvre un mail déjà prêt.</div></div><a class="btn small" id="report" href="${esc(reportLink())}">Écrire</a></div>` : ""}
+  </div>
+  <div class="grp-t">Pendant le match</div>
   <div class="card grp">
     <div class="set"><div><b>Son des alertes</b><div class="muted">Sur iPhone, le bouton silencieux coupe le son.</div></div>
       <div class="row" style="flex-shrink:0">${segBtns("sound", [[true,"Oui"],[false,"Non"]])}<button class="btn small" id="testSound">Tester</button></div></div>
@@ -1121,10 +1127,6 @@ function settingsView(){
       <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
       ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}`)}
   </div>`}
-  ${REPORT_ON ? `<div class="grp-t">Aide</div>
-  <div class="card grp">
-    <div class="set"><div><b>Signaler un souci</b><div class="muted">Un bug, quelque chose de pas clair, une idée : ça ouvre un mail déjà prêt.</div></div><a class="btn small" id="report" href="${esc(reportLink())}">Écrire</a></div>
-  </div>` : ""}
   <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>
   ${CLOUD_ON ? privacyDetails("margin:0 4px") : ""}
   <p class="muted" style="font-size:.8rem;margin:0 4px">${COPYRIGHT}</p>`;
@@ -1139,6 +1141,7 @@ function reportLink(){
   return `mailto:${REPORT_TO}?subject=${encodeURIComponent("StickMate : un souci")}&body=${encodeURIComponent(body)}`;
 }
 function bindSettings(){
+  bindHelp(); if (helpOpen) return;
   const v = $("#view");
   v.querySelectorAll("[data-pref]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.pref, val = b.dataset.val;
