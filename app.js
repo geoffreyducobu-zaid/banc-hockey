@@ -122,7 +122,7 @@ function loadLocal(){ let v = null; try { v = JSON.parse(localStorage.getItem("b
 function saveLocal(){ if (ADJ) return; try { localStorage.setItem("banc-state", JSON.stringify(S)); } catch(e){} }
 function loadClock(){ try { return JSON.parse(localStorage.getItem("banc-clock") || "null") || {q:1,elapsed:0,running:false,startedAt:0,done:[]}; } catch(e){ return {q:1,elapsed:0,running:false,startedAt:0,done:[]}; } }
 function saveClock(){ if (ADJ) return; try { localStorage.setItem("banc-clock", JSON.stringify(C)); } catch(e){} }
-function pushClock(){ saveClock(); liveSendClock(); }
+function pushClock(){ bumpClock(); saveClock(); liveSendClock(); }
 // Toujours enregistré sur le téléphone d'abord ; cloud.js l'envoie en ligne si le coach a un compte.
 function persist(){ if (ADJ) return; saveLocal(); markChanged(); liveChanged(); }
 function teamTitle(){ return [S.profile?.club, S.teamName].filter(Boolean).join(" · ") || "StickMate"; }

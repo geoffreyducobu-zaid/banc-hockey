@@ -19,14 +19,33 @@ function adjointView(){
     squad:S.squad.map(p => ({name:p.name, pos:p.pos, present:p.present, roles:p.roles || []}))};
 }
 // Le chrono voyage en « temps écoulé à l'envoi » : pas besoin que les deux téléphones aient la même heure.
-const clockMsg = () => ({q:C.q, elapsed:clockElapsed(), running:C.running, done:[...(C.done || [])]});
+// Chaque action sur le chrono (pause, départ, réglage…) reçoit un numéro de version LV = {v, by} : v monte de 1
+// à chaque action, by départage deux actions faites au même moment sur les deux téléphones. Un appareil ne prend
+// jamais un chrono plus ancien que le sien : deux messages qui se croisent ne peuvent plus laisser l'un en pause
+// et l'autre en marche. Et chaque appareil renvoie son chrono toutes les 4 s : un message perdu est rattrapé.
+let LV = (() => { try { return JSON.parse(localStorage.getItem("banc-lv")) || {v:0, by:""}; } catch(e){ return {v:0, by:""}; } })();
+const saveLV = () => { try { localStorage.setItem("banc-lv", JSON.stringify(LV)); } catch(e){} };
+const newerLV = (a, b) => a.v > b.v || (a.v === b.v && a.by > b.by);
+function bumpClock(){ LV = {v: LV.v + 1, by: SID}; saveLV(); }
+const clockMsg = () => ({q:C.q, elapsed:clockElapsed(), running:C.running, done:[...(C.done || [])], v:LV.v, by:LV.by, role: ADJ ? "adjoint" : "coach"});
 function adoptClock(m){
   if (!m || typeof m.q !== "number") return;
+  if (m.v != null) {
+    const k = {v:m.v, by:m.by || ""};
+    // même version venant du coach : l'adjoint se recale sur son chrono (le coach fait foi)
+    const same = ADJ && m.role === "coach" && k.v === LV.v && k.by === LV.by;
+    if (!newerLV(k, LV) && !same) return;
+    LV = k; saveLV();
+  }
+  const before = {q:C.q, el:clockElapsed(), run:C.running};
   C = {q:m.q, elapsed:m.elapsed, running:!!m.running, startedAt:Date.now(), done:[...(m.done || [])]};
   if (!ADJ) saveClock();
+  // un simple recalage (même quart, même état, moins de 2 s d'écart) ne relance pas les alertes ni l'écran
+  if (before.q === C.q && before.run === C.running && Math.abs(before.el - C.elapsed) < 2) return;
   lastAlertKey = "";
   if (mode === "match" && !inc) render();
 }
+setInterval(() => { if (liveCh && liveOK && S.plan) liveSendClock(); }, 4000);
 
 function liveConnect(code){
   if (!LIVE_ON || liveCode === code) return;
