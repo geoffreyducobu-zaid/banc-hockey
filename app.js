@@ -491,7 +491,8 @@ function replanBase(T){
   const Tg = computeTargets();
   // Plan automatique : un joueur à 0 minute reste hors du plan, sauf s'il a joué ou si le coach le fait entrer.
   const sits = x => S.plan.timeMode === "notes" && !(S.plan.targets?.[x.name] > 0) && !(playedUntil(S.plan, x.name, T) > 0) && !eventsOf().some(e => e.inP === x.name) && inc?.inP !== x.name;
-  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:[...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], rank: placeRank([...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], S.preset), target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x), stay: stayOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])])}));
+  const posOf = x => { const L = [...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], v = invPos(x.name); return v ? [v, ...L.filter(q => q !== v)] : L; };
+  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:posOf(x), rank: placeRank(posOf(x), S.preset), target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x), stay: stayOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])])}));
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
@@ -525,6 +526,17 @@ function doIncident(){
   const T = Math.floor(matchT()*10)/10;
   const type = inc.type, p = inc.player, info = INC[type] || {d:0};
   const seg = segAt(S.plan, T);
+  // Hors plan entre deux joueurs du terrain : ils échangent leurs places, les changements prévus restent les mêmes.
+  if (type === "libre" && inc.inv) {
+    const ev = {t:T, type:"inverse", player:p, inP:inc.inP, pos:seg.on[p] || null, pos2:seg.on[inc.inP] || null};
+    if (!ev.pos || !ev.pos2) { incMsg = "Ces deux joueurs doivent être sur le terrain."; incBusy = false; render(); return; }
+    if (S.plan.manual) {
+      const res = manualPlan([...eventsOf(), ev]), fresh = res.warnings.filter(w => !S.plan.warnings.includes(w));
+      if (fresh.length) { res.fresh = fresh; inc.pending = res; incBusy = false; render(); return; }
+      applyPlan(res); return;
+    }
+    applyPlan(invertPlan(S.plan, ev)); return;
+  }
   // « Plan manuel » : la liste du coach continue, rien n'est recalculé.
   if (S.plan.manual) {
     const evs = [...eventsOf(), {t:T, type, player:p, inP: inc.inP || null, d:info.d, pos: seg.on[p] || null}];
@@ -564,6 +576,31 @@ function doIncident(){
   if (res.warnings.length) { inc.pending = res; incBusy = false; render(); return; }
   applyPlan(res);
 }
+// Deux joueurs du terrain échangent leurs places à ev.t. Ensuite, les deux places restent échangées dans le plan
+// (celui qui devait entrer à la place de l'un prend sa nouvelle place), tant que chacun connaît la place qu'il reçoit.
+// Sinon, à ce changement-là, tout le monde reprend la place prévue par le plan. Les minutes et les changements ne bougent pas.
+function invertPlan(plan, ev){
+  const T = ev.t, sw = q => q === ev.pos ? ev.pos2 : q === ev.pos2 ? ev.pos : q;
+  const knows = (n, q) => (S.squad.find(x => x.name === n)?.pos || []).includes(q) || extraPos(n).includes(q) || invPos(n) === q;
+  const segs = [], free = new Set([ev.player, ev.inP]); let on = true, prev = null;
+  plan.segs.forEach(s => {
+    if (s.b <= T + 1e-6) { segs.push({...s, on:{...s.on}}); return; }
+    if (s.a < T - 1e-6) segs.push({...s, b:T, on:{...s.on}});
+    if (prev) Object.keys(prev).forEach(n => { if (!(n in s.on)) free.delete(n); }); // les deux joueurs, tant qu'ils ne sont pas sortis
+    if (on && Object.entries(s.on).some(([n, q]) => sw(q) !== q && !free.has(n) && !knows(n, sw(q)))) on = false;
+    const o = on ? Object.fromEntries(Object.entries(s.on).map(([n, q]) => [n, sw(q)])) : {...s.on};
+    segs.push({...s, a:Math.max(s.a, T), on:o}); prev = s.on;
+  });
+  const changes = [];
+  for (let i = 1; i < segs.length; i++) {
+    const A = segs[i-1].on, B = segs[i].on;
+    const ins = Object.keys(B).filter(n => !(n in A)).map(n => [n, B[n]]), outs = Object.keys(A).filter(n => !(n in B)).map(n => [n, A[n]]), moves = Object.keys(B).filter(n => n in A && A[n] !== B[n]).map(n => [n, A[n], B[n]]);
+    if (ins.length || outs.length || moves.length) changes.push({t:segs[i].a, ins, outs, moves});
+  }
+  return {...plan, segs, changes, events:[...(plan.events || []), ev]};
+}
+// Place prise par un joueur lors de son dernier échange de places sur le terrain (gardée comme préférence ensuite).
+function invPos(n){ const e = eventsOf().filter(x => x.type === "inverse" && (x.player === n || x.inP === n)).pop(); return e ? (e.player === n ? e.pos2 : e.pos) : null; }
 function activeBanners(t){
   const out = [];
   eventsOf().forEach(e => {
@@ -583,12 +620,16 @@ function swapPanel(seg){
   const outQ = inc.player ? seg.on[inc.player] : null;
   const canQ = n => outQ && (S.squad.find(p => p.name === n)?.pos || []).includes(outQ);
   const bench = present().map(p=>p.name).filter(n => !(n in seg.on) && !outForGood().includes(n)).sort((a,b) => canQ(b) - canQ(a));
+  const mates = inc.player ? Object.keys(seg.on).filter(n => n !== inc.player && !/G/.test(seg.on[n])) : [];
+  const inQ = inc.inv && inc.inP ? seg.on[inc.inP] : null;
   return `<div class="card incp"><h2>Changement hors plan</h2>
     <div class="muted" style="margin:0 0 6px;font-size:.9rem">Qui sort ?</div>
     <div class="inc-players">${onField.map(n => `<button class="btn" data-swo="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)} <small>${esc(gShort(seg.on[n]))}</small></button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui entre ?</div>
-    <div class="inc-players">${bench.map(n => `<button class="btn${outQ && !canQ(n) ? " dim" : ""}" data-swi="${esc(n)}" aria-pressed="${inc.inP===n}">${esc(n)}${outQ && !canQ(n) ? " <small>autre poste</small>" : ""}</button>`).join("") || '<span class="muted">Personne sur le banc</span>'}</div>
-    ${outQ && inc.inP && S.plan?.manual ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)} et reprend ses changements prévus dans ta liste (et inversement).</div>` : outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas ${esc(posName(outQ).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(outQ).toLowerCase())} jusqu'à la fin du match.`} Le reste du plan est recalculé.</div>` : ""}
+    <div class="inc-players">${bench.map(n => `<button class="btn${outQ && !canQ(n) ? " dim" : ""}" data-swi="${esc(n)}" aria-pressed="${!inc.inv && inc.inP===n}">${esc(n)}${outQ && !canQ(n) ? " <small>autre poste</small>" : ""}</button>`).join("") || '<span class="muted">Personne sur le banc</span>'}</div>
+    ${mates.length && !/G/.test(outQ || "") ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Ou échanger sa place avec un joueur du terrain :</div>
+    <div class="inc-players">${mates.map(n => `<button class="btn" data-swf="${esc(n)}" aria-pressed="${!!inc.inv && inc.inP===n}">⇄ ${esc(n)} <small>${esc(gShort(seg.on[n]))}</small></button>`).join("")}</div>` : ""}
+    ${inQ ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${esc(inc.player)} passe ${esc(gName(inQ).toLowerCase())} et ${esc(inc.inP)} passe ${esc(gName(outQ).toLowerCase())}, pour la suite du match. Les changements prévus ne bougent pas : celui qui devait entrer à la place de l'un prend sa nouvelle place. Si un joueur qui entre ne connaît pas cette place, chacun reprend à ce moment-là la place prévue par le plan.</div>` : outQ && inc.inP && S.plan?.manual ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)} et reprend ses changements prévus dans ta liste (et inversement).</div>` : outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas ${esc(posName(outQ).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(outQ).toLowerCase())} jusqu'à la fin du match.`} Le reste du plan est recalculé.</div>` : ""}
     ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
     <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${inc.player && inc.inP && !incBusy ? "" : "disabled"}>${incBusy ? "Recalcul…" : "Valider"}</button><button class="btn" id="incCancel">Annuler</button></div>
   </div>`;
@@ -745,7 +786,7 @@ async function loadSeason(){
 }
 async function saveMatch(){
   const sh = sheet();
-  const rec = {match: S.curMatch || null, date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => e.type!=="bless" && e.type!=="libre").map(e => ({type:e.type, player:e.player}))};
+  const rec = {match: S.curMatch || null, date: S.matchDate || new Date().toISOString().slice(0,10), label: S.matchLabel || "", minutes: {}, targets: {}, us: sh.us.length, them: sh.them.length, pc: sh.pc, scorers: sh.us.map(g => g.player).filter(Boolean), cards: eventsOf().filter(e => !["bless", "libre", "inverse", "retour"].includes(e.type)).map(e => ({type:e.type, player:e.player}))};
   for (const [n,m] of Object.entries(S.plan.played)) rec.minutes[n] = Math.round(m*10)/10;
   for (const [n,m] of Object.entries(S.plan.targets||{})) rec.targets[n] = Math.round(m*10)/10;
   try {
@@ -1044,8 +1085,9 @@ function bindMatch(){
   $("#incCancel")?.addEventListener("click", () => { inc = null; render(); });
   $("#incUndo")?.addEventListener("click", function(){ if (this.dataset.armed && ADJ) adjAsk("undo"); else if (this.dataset.armed) { undoIncident(); render(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
   $("#swapOpen")?.addEventListener("click", () => { inc = {type:"libre", player:null, inP:null}; incMsg = ""; render(); });
-  document.querySelectorAll("[data-swo]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.swo; render(); }));
-  document.querySelectorAll("[data-swi]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swi; render(); }));
+  document.querySelectorAll("[data-swo]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.swo; if (inc.inv || inc.inP === inc.player) { inc.inP = null; inc.inv = false; } render(); }));
+  document.querySelectorAll("[data-swi]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swi; inc.inv = false; render(); }));
+  document.querySelectorAll("[data-swf]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swf; inc.inv = true; render(); }));
   bindSheet();
   document.querySelectorAll("[data-inct]").forEach(b => b.addEventListener("click", () => { inc.type = b.dataset.inct; inc.inP = undefined; render(); }));
   document.querySelectorAll("[data-incp]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.incp; inc.inP = undefined; render(); }));
@@ -1482,7 +1524,7 @@ function mBase(){
 }
 const sameOn = (x, y) => Object.keys(x).length === Object.keys(y).length && Object.keys(x).every(k => y[k] === x[k]);
 // Imprévus pris en compte par la liste (évènements du plan actif).
-const M_EV = ["bless", "retour", "rouge", "libre", "vert", "jaune", "jaune10"];
+const M_EV = ["bless", "retour", "rouge", "libre", "inverse", "vert", "jaune", "jaune10"];
 const mEvents = () => S.plan?.manual ? (S.plan.events || []) : [];
 // Terrain (nom -> poste) après les changements et imprévus jusqu'à t inclus. Après une blessure ou un
 // hors plan, le remplaçant reprend les changements prévus du joueur sorti (et inversement). Pendant un
@@ -1490,6 +1532,8 @@ const mEvents = () => S.plan?.manual ? (S.plan.events || []) : [];
 function manualState(t, events = mEvents()){
   const {on, names} = mBase(), bad = [], eff = {}, gone = new Set(), swaps = [], cards = [], ids = PRESETS[S.preset].map(p => p[0]);
   const ren = n => swaps.reduce((x, [a, b]) => x === a ? b : x === b ? a : x, n);
+  // places échangées par un hors plan entre deux joueurs du terrain : les changements suivants de la liste suivent l'échange
+  const psw = [], rp = q => psw.reduce((x, [a, b]) => x === a ? b : x === b ? a : x, q);
   const items = [...manualList().map(c => ({t: c.t, c})), ...events.filter(e => M_EV.includes(e.type)).map(e => ({t: e.t, e}))]
     .sort((a, b) => a.t - b.t || (a.e ? 1 : 0) - (b.e ? 1 : 0));
   for (const it of items) {
@@ -1497,10 +1541,11 @@ function manualState(t, events = mEvents()){
     if (it.c) {
       const c = it.c, outs = c.outs.map(ren), ins = c.ins.map(ren); eff[c.id] = {outs, ins};
       if (outs.length !== ins.length || c.pos.some(q => !ids.includes(q)) || outs.some(n => !(n in on)) || ins.some(n => n in on || gone.has(n) || !names.has(n))) { bad.push(c.id); continue; }
-      outs.forEach(n => delete on[n]); ins.forEach((n, i) => on[n] = c.pos[i]);
+      outs.forEach(n => delete on[n]); ins.forEach((n, i) => on[n] = rp(c.pos[i]));
       continue;
     }
     const e = it.e, p = e.player, q = on[p];
+    if (e.type === "inverse") { const q2 = on[e.inP]; if (q && q2) { on[p] = q2; on[e.inP] = q; psw.push([q, q2]); } continue; }
     if (e.type === "bless" || e.type === "libre") {
       if (q) delete on[p];
       if (e.inP && q && !(e.inP in on)) { on[e.inP] = q; swaps.push([p, e.inP]); }
