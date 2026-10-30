@@ -82,6 +82,41 @@ const placeGroup = (q, sys) => (PLACE_GROUPS[sys] || []).find(g => g[0].includes
 function expandPos(pos, sys){ const out = []; (pos || []).forEach(q => { const g = placeGroup(q, sys); (g ? g[0] : [q]).forEach(x => { if (!out.includes(x)) out.push(x); }); }); return out; }
 // Rang de préférence de chaque place (les places d'un même groupe ont le même rang) : pour le moteur.
 function placeRank(pos, sys){ const seen = []; return pos.map(q => { const g = placeGroup(q, sys), k = g ? g[1] : q; if (!seen.includes(k)) seen.push(k); return seen.indexOf(k); }); }
+// Effectif : appui long sur une place puis glisser pour changer l'ordre de préférence (un tap court la retire).
+let placeDragEnd = 0;
+function dragPlace(chip){
+  let timer = null, drag = false, x0 = 0, y0 = 0;
+  const box = chip.parentNode;
+  const noScroll = e => { if (drag) e.preventDefault(); };
+  // écoutés sur le document : la place change de position dans la liste pendant qu'on la glisse
+  const move = e => {
+    if (!drag) { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 8) stop(); return; }
+    const t = document.elementFromPoint(e.clientX, e.clientY)?.closest(".pchip");
+    if (!t || t === chip || t.parentNode !== box) return;
+    const L = [...box.querySelectorAll(".pchip")];
+    box.insertBefore(chip, L.indexOf(t) > L.indexOf(chip) ? t.nextSibling : t);
+  };
+  const stop = () => { clearTimeout(timer); timer = null; document.removeEventListener("touchmove", noScroll); document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", end); document.removeEventListener("pointercancel", end); };
+  const end = () => {
+    const was = drag; drag = false; stop(); chip.classList.remove("dragging");
+    if (!was) return;
+    placeDragEnd = Date.now();
+    const p = S.squad[+chip.dataset.rmpos], sys = teamSys();
+    const U = placeUnits(p.pos, sys), order = [...box.querySelectorAll(".pchip")].map(c => c.dataset.q);
+    const pos = order.flatMap(q => (U.find(u => u[0][0] === q) || [[q]])[0]);
+    if (pos.join() !== p.pos.join()) { p.pos = pos; preview = null; persist(); }
+    render();
+  };
+  chip.addEventListener("contextmenu", e => e.preventDefault());
+  chip.addEventListener("pointerdown", e => {
+    if (e.button > 0) return;
+    x0 = e.clientX; y0 = e.clientY; drag = false; stop();
+    try { chip.releasePointerCapture(e.pointerId); } catch(err){}
+    document.addEventListener("touchmove", noScroll, {passive: false});
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", end); document.addEventListener("pointercancel", end);
+    timer = setTimeout(() => { drag = true; chip.classList.add("dragging"); try { navigator.vibrate?.(15); } catch(err){} }, 350);
+  });
+}
 // Places telles que l'effectif les montre : une par groupe. [ids, nom, abréviation]
 function placeUnits(pos, sys){ const out = []; expandPos(pos, sys).forEach(q => { const g = placeGroup(q, sys); if (g) { if (!out.some(u => u[0] === g[0])) out.push(g); } else out.push([[q], posName(q, sys), posShort(q, sys)]); }); return out; }
 const normPlaces = () => { const sys = teamSys(); S.squad.forEach(p => { p.pos = expandPos(p.pos, sys); }); };
@@ -788,7 +823,24 @@ function render(){
   if (onboard) { v.innerHTML = onboardView(); bindOnboard(); return; }
   if (mode === "coach" && S.pin && !coachOK) { v.innerHTML = pinView(); bindPin(); return; }
   const [view, bind] = VIEWS[mode] || VIEWS.home;
-  v.innerHTML = view(); bind();
+  const keep = keepNumber(v);
+  v.innerHTML = view(); bind(); keep();
+}
+// Case à chiffres en cours d'utilisation (petites flèches) : on remet la même case après le rendu. Sinon le 2e clic
+// tombe sur une case toute neuve, le navigateur le prend pour un double-clic qui sélectionne le chiffre.
+function keepNumber(v){
+  const a = document.activeElement;
+  if (!a || a.tagName !== "INPUT" || a.type !== "number" || !v.contains(a)) return () => {};
+  const sig = el => [...el.attributes].filter(x => x.name.startsWith("data-") || x.name === "aria-label").map(x => x.name + "=" + x.value).sort().join("|");
+  const k = sig(a);
+  return () => {
+    const n = [...v.querySelectorAll('input[type="number"]')].find(el => sig(el) === k);
+    if (!n || n.disabled) return;
+    [...a.attributes].forEach(x => { if (!n.hasAttribute(x.name)) a.removeAttribute(x.name); });
+    [...n.attributes].forEach(x => a.setAttribute(x.name, x.value));
+    if (a.value !== n.value) a.value = n.value;
+    n.replaceWith(a); a.focus({preventScroll: true});
+  };
 }
 function goTo(m){ if (m === mode) return; mode = m; inc = null; helpOpen = null; render(); window.scrollTo(0, 0); }
 // Dans le plan et pendant le match : place générale (« Milieu déf. »), sans le côté. Seule la compo de départ dit le côté.
@@ -1242,7 +1294,7 @@ function squadTab(){
       <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px"><button class="btn primary" id="sysKeep">Garder les places adaptées</button><button class="btn" id="sysClear">Tout effacer et recommencer</button><button class="btn" id="sysCancel">Annuler</button></div>
       <div class="muted" style="margin-top:6px;font-size:.85rem">Garder : chaque poste passe à la place la plus proche du ${esc(sysAsk)}. Vérifie ensuite chaque joueur. Effacer : seuls les gardiens restent.</div></div>` : ""}
     ${posNote ? `<div class="warn" style="margin-bottom:10px">${esc(posNote)}</div>` : ""}
-    <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Corners : D donneur, B bloqueur.</p>
+    <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste). Touche un poste pour le retirer, reste appuyé dessus puis glisse-le pour changer l'ordre. Corners : D donneur, B bloqueur.</p>
     ${squadMsg ? `<div class="warn" style="margin-bottom:10px">${esc(squadMsg)}</div>` : ""}
     <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes (${esc(sys)})</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
@@ -1674,7 +1726,7 @@ function bindCoach(){
     preview = null; persist(); render();
   }));
   v.querySelectorAll("[data-del]").forEach(el => el.addEventListener("click", () => { if (el.dataset.armed) { S.squad.splice(+el.dataset.del,1); preview=null; persist(); render(); } else { el.dataset.armed=1; el.textContent="Sûr ?"; } }));
-  v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; const g = placeGroup(b.dataset.q, teamSys()), rm = g ? g[0] : [b.dataset.q]; p.pos = p.pos.filter(q => !rm.includes(q)); preview = null; persist(); render(); }));
+  v.querySelectorAll("[data-rmpos]").forEach(b => { dragPlace(b); b.addEventListener("click", () => { if (Date.now() - placeDragEnd < 400) return; const p = S.squad[+b.dataset.rmpos]; const g = placeGroup(b.dataset.q, teamSys()), rm = g ? g[0] : [b.dataset.q]; p.pos = p.pos.filter(q => !rm.includes(q)); preview = null; persist(); render(); }); });
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = expandPos([...p.pos, sel.value], teamSys()); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
   $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],present:true,minutes:0}); persist(); render(); });

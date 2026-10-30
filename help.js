@@ -12,7 +12,7 @@ const GUIDE = [
   {t: "Ton effectif", intro: `Tout se passe dans <b>Coach › Effectif</b>.`, steps: [
     `<b>Choisis ton système de jeu</b> (3-2-3-2, 4-3-3, 4-4-2, 4-2-3-1…). Les noms des places suivent ce système.`,
     `<b>Ajoute tes joueurs</b> avec « + Ajouter un joueur » et écris leur nom.`,
-    `<b>Donne-leur leurs places</b> avec « + poste », dans l'ordre de préférence : la 1re est sa meilleure place. Touche une place pour la retirer. Les places du centre qui vont par deux (ou trois) ne sont pas séparées : « Milieu déf. », « Back central », « Avant ». Seule la compo de départ montre le côté exact.`,
+    `<b>Donne-leur leurs places</b> avec « + poste », dans l'ordre de préférence : la 1re est sa meilleure place. Touche une place pour la retirer. Pour changer l'ordre, reste appuyé sur une place puis glisse-la avant ou après une autre. Les places du centre qui vont par deux (ou trois) ne sont pas séparées : « Milieu déf. », « Back central », « Avant ». Seule la compo de départ montre le côté exact.`,
     `<b>Corners</b> : touche D pour un donneur, B pour un bloqueur. Le plan garde toujours un donneur et un bloqueur sur le terrain.`,
     `Tu changes de système plus tard ? L'app te propose de garder les places adaptées au nouveau système (à vérifier ensuite) ou de tout effacer.`,
   ], go: [["coach:squad", "Effectif"]]},
