@@ -236,6 +236,8 @@ h2{font:800 1.15rem/1.15 var(--display);letter-spacing:-.01em;margin:0 0 12px;co
 .posed{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:180px}
 .pchip{border:0;border-radius:6px;color:#fff;font:700 .78rem var(--display);padding:3px 6px;letter-spacing:.02em}
 .pchip.def{background:var(--def)}.pchip.dm{background:var(--dm)}.pchip.mid{background:var(--mid)}.pchip.att{background:var(--att)}.pchip.gk{background:var(--gk)}
+.pchip{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;cursor:grab}
+.pchip.dragging{transform:scale(1.15);box-shadow:0 4px 12px rgba(0,0,0,.3);outline:2px solid var(--ink);cursor:grabbing}
 .posed select{width:auto;min-width:0;font-size:.8rem;padding:3px 4px}
 /* pitch */
 .pitch{position:relative;aspect-ratio:3/4.4;max-width:100%;background:repeating-linear-gradient(180deg,var(--turf) 0 12.5%,var(--turf2) 12.5% 25%);border-radius:14px;overflow:hidden}
@@ -404,13 +406,13 @@ tr.absent td:not(:first-child){opacity:.45}
   <button data-tab="settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Réglages</span></button>
 </nav>
 
-<script src="vendor/supabase.js?v=53"></script>
-<script src="config.js?v=53"></script>
-<script src="rotation.js?v=53"></script>
-<script src="vendor/qrcode.js?v=53"></script>
-<script src="cloud.js?v=53"></script>
-<script src="live.js?v=53"></script>
-<script src="help.js?v=53"></script>
-<script src="app.js?v=53"></script>
+<script src="vendor/supabase.js?v=54"></script>
+<script src="config.js?v=54"></script>
+<script src="rotation.js?v=54"></script>
+<script src="vendor/qrcode.js?v=54"></script>
+<script src="cloud.js?v=54"></script>
+<script src="live.js?v=54"></script>
+<script src="help.js?v=54"></script>
+<script src="app.js?v=54"></script>
 
 </body></html>
