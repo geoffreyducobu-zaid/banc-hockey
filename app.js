@@ -130,7 +130,7 @@ const slug = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toL
 // Barre du haut sur une ligne : l'équipe à gauche ; à droite le match ouvert (page Match, adjoint) ou l'état de la sauvegarde.
 // Logo StickMate : l'icône (flèches du changement autour de la balle) et le nom avec le i en crosse.
 const LOGO_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M21.8 39.7A30 30 0 0 1 76 35M77.6 23.7 76 35 65.4 30.7" fill="none" stroke="#4ee08f" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M78.2 60.3A30 30 0 0 1 24 65M34.6 69.3 24 65 22.4 76.3" fill="none" stroke="#ff7a6e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="50" r="11" fill="#f6b81c"/></svg>`;
-const WORDMARK = `<span class="wm">St<svg class="wm-i" viewBox="0 0 30 100" aria-hidden="true"><path d="M16 30 15 78Q14 95 1 92" fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="9" r="9.5" fill="#f6b81c"/></svg>ck<span class="wm-mate">Mate</span></span>`;
+const WORDMARK = `<span class="wm" role="img" aria-label="StickMate">St<svg class="wm-i" viewBox="0 0 30 100" aria-hidden="true"><path d="M16 30 15 78Q14 95 1 92" fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="9" r="9.5" fill="#f6b81c"/></svg>ck<span class="wm-mate">Mate</span></span>`;
 const COPYRIGHT = "© 2026 Geoffrey Ducobu. StickMate, tous droits réservés.";
 const logoLockup = () => `<div class="lockup" role="img" aria-label="StickMate"><span class="logo">${LOGO_SVG}</span>${WORDMARK}</div>`;
 function paintSub(){ const bn = $("#brandName"); if (bn) { const t = S.teamName || S.profile?.club; if (t) bn.textContent = t; else bn.innerHTML = WORDMARK; } document.title = S.teamName ? `StickMate · ${S.teamName}` : "StickMate";
@@ -227,6 +227,8 @@ function generate(seed){
     if (!best.warnings.length) break;
   }
   if (best) { best.timeMode = timeMode(); best.rulesSig = rulesSig(); best.fmt = fmtSig(); }
+  // Un seul donneur ou bloqueur présent : le plan le garde sur le terrain (il en faut toujours un), on dit pourquoi.
+  if (best && !best.error) [["D", "donneur"], ["B", "bloqueur"]].forEach(([r, l]) => { const L = present().filter(p => (p.roles || []).includes(r)); if (L.length === 1) best.warnings.unshift(`${L[0].name} est ton seul ${l} de corner (${r}) présent : le plan le garde le plus possible sur le terrain. Donne aussi ${r} à un autre joueur dans « Effectif ».`); });
   return best;
 }
 let _vcPlan = null, _vc = [];
@@ -379,6 +381,8 @@ function sortedMatches(){
   const L = S.matches.map(m => m.id === S.curMatch ? curMatchRec() : m);
   return L.sort((a,b) => (a.matchDate || "9999").localeCompare(b.matchDate || "9999"));
 }
+// Date d'un match de la saison : AAAA-MM-JJ -> « dim. 1 nov. » (une autre écriture reste telle quelle)
+const sDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || "") ? fmtDate(d) : d || "";
 const fmtDate = d => { if (!d) return "Sans date"; try { return new Date(d + "T12:00:00").toLocaleDateString("fr-BE", {weekday:"short", day:"numeric", month:"short"}); } catch(e){ return d; } };
 function matchesView(){
   const rows = sortedMatches().map(r => `<div class="mrow${r.id === S.curMatch ? " cur" : ""}">
@@ -632,7 +636,7 @@ async function makePdf(){
         const lab = Math.abs(c.t-(q-1)*ql) < 1e-6 ? "Pause" : fmtQ(c.t).label;
         line(lab, 11, true, 16);
         pairChanges(c).forEach(pr => line(`${pr.inP || "-"} remplace ${pr.outP || "-"}${pr.inQ ? "  (" + gName(pr.inQ) + ")" : ""}`, 10, false, 30));
-        moveGroups(c).forEach(g => line(`Changement de poste : ${moveText(g)}`, 9, false, 30));
+        moveGroups(c).forEach(g => line(`Changement de poste : ${moveText(g).replace(/→/g, "->")}`, 9, false, 30)); // la police du PDF n'a pas la flèche
       });
     }
     doc.save(`plan-b-${slug(S.teamName || "equipe")}.pdf`);
@@ -660,7 +664,7 @@ async function seasonPdf(){
       row.forEach((v, k) => txt(v, cols[k][1], 10)); next();
     });
     next(4); txt("Matchs", 14, 12, true); next(7);
-    season.forEach(m => { txt([m.date, m.label].filter(Boolean).join(" · ") || "Match", 14, 10); if (m.us !== undefined) txt(`${m.us}-${m.them}`, 160, 10, true); next(); });
+    season.forEach(m => { txt([sDate(m.date), m.label].filter(Boolean).join(" · ") || "Match", 14, 10); if (m.us !== undefined) txt(`${m.us}-${m.them}`, 160, 10, true); next(); });
     doc.save(`saison-${slug(S.teamName || "equipe")}.pdf`);
     done("Saison téléchargée en PDF.");
   } catch(e) { done("Impossible de créer le PDF. Réessaie."); }
@@ -742,7 +746,7 @@ function ratingCard(){
   const names = Object.keys(m.minutes || {}).filter(n => m.minutes[n] > 0).sort((a, b) => a.localeCompare(b, "fr", {numeric:true}));
   const rows = names.map(n => `<label class="minrow"><span>${esc(n)}</span><select data-rate="${esc(n)}" aria-label="Note de ${esc(n)}"><option value="">—</option>${[1,2,3,4,5,6,7,8,9,10].map(v => `<option ${m.ratings?.[n] === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>`).join("");
   return `<div class="card rate-card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Notes du match</h2><button class="btn small" id="rateClose">Fermer</button></div>
-    <p class="muted" style="margin:4px 0 10px;font-size:.9rem">${esc([m.date, m.label].filter(Boolean).join(" · "))}${m.us !== undefined ? ` · ${m.us}–${m.them}` : ""}. Une note sur 10 pour chaque joueur qui a joué. Elle est gardée dans ta saison et n'apparaît que dans la page Coach.</p>
+    <p class="muted" style="margin:4px 0 10px;font-size:.9rem">${esc([sDate(m.date), m.label].filter(Boolean).join(" · "))}${m.us !== undefined ? ` · ${m.us}–${m.them}` : ""}. Une note sur 10 pour chaque joueur qui a joué. Elle est gardée dans ta saison et n'apparaît que dans la page Coach.</p>
     ${rows ? `<div class="mins">${rows}</div>` : `<p class="muted">Personne n'a joué dans ce match.</p>`}</div>`;
 }
 function seasonStats(){
@@ -759,7 +763,7 @@ function seasonHtml(){
     const sug = s.rn ? `<b>${String(Math.round(s.rt / s.rn * 10) / 10).replace(".", ",")}</b><span class="muted">/10</span>` : `<span class="muted">—</span>`;
     const cards = [["cv","g"],["cj","y"],["cr","r"]].filter(([k]) => s[k]).map(([k,c]) => `<span class="cardn ${c}">${s[k]}</span>`).join("");
     return `<tr><td>${esc(n)}</td><td>${s.n}</td><td>${s.g||""}</td><td>${cards}</td><td>${R.fmtMin(s.tot)}</td><td>${R.fmtMin(s.tot/s.n)}</td><td class="dev" style="color:${Math.abs(s.dev)<8?"var(--in)":"var(--out)"}">${s.dev>=0?"+":"−"}${R.fmtMin(Math.abs(s.dev))}</td><td>${sug}</td></tr>`; }).join("");
-  const list = season.map(m => `<span class="mchip"><button class="rate-b" data-ratem="${esc(m.id)}" aria-pressed="${rateId === m.id}" title="Noter les joueurs">${Object.keys(m.ratings || {}).length ? "★" : "☆"} Noter</button>${esc(m.date)}${m.label?` · ${esc(m.label)}`:""}${m.us!==undefined?` · <b>${m.us}–${m.them}</b>`:""} <button class="x" data-delm="${esc(m.id)}" aria-label="Supprimer ce match">✕</button></span>`).join("");
+  const list = season.map(m => `<span class="mchip"><button class="rate-b" data-ratem="${esc(m.id)}" aria-pressed="${rateId === m.id}" title="Noter les joueurs">${Object.keys(m.ratings || {}).length ? "★" : "☆"} Noter</button>${esc(sDate(m.date))}${m.label?` · ${esc(m.label)}`:""}${m.us!==undefined?` · <b>${m.us}–${m.them}</b>`:""} <button class="x" data-delm="${esc(m.id)}" aria-label="Supprimer ce match">✕</button></span>`).join("");
   return `<div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Matchs</th><th>Buts</th><th>Cartes</th><th>Total</th><th>Moyenne</th><th>Écart cumulé</th><th>Note moy.</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="muted" style="font-size:.85rem;margin:10px 0 6px">Écart cumulé = minutes jouées moins minutes visées, sur tous les matchs. Les cartes comptent comme du temps hors du terrain. Touche « Noter » sur un match pour noter tes joueurs sur 10.</p><div class="mlist">${list}</div>`;
 }
@@ -1168,7 +1172,7 @@ function settingsView(){
       <div class="row"><button class="btn primary" id="bkOut">⬇ Télécharger une sauvegarde</button><label class="btn" style="display:inline-block">⬆ Charger une sauvegarde<input type="file" id="bkIn" accept=".json,application/json" hidden></label></div>
       ${backupMsg ? `<div class="ok" style="margin-top:10px">${esc(backupMsg)}</div>` : ""}`)}
   </div>`}
-  <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont maintenant dans Coach, onglet « Match ».</p>
+  <p class="muted" style="font-size:.85rem;margin:0 4px">Les règles de rotation sont dans Coach, onglet « Match ».</p>
   ${CLOUD_ON ? privacyDetails("margin:0 4px") : ""}
   <p class="muted" style="font-size:.8rem;margin:0 4px">${COPYRIGHT}</p>`;
 }
@@ -1592,7 +1596,7 @@ function matchPrepTab(){
     ${step("compo", 3, filled === ids.length, "Compo de départ", `${S.preset} · ${filled} postes sur ${ids.length}`,
       `<div class="row" style="margin-bottom:12px"><span class="muted">Système : <b>${esc(S.preset)}</b>${S.preset === teamSys() ? " (à changer dans « Effectif »)" : ` (celui de ce match ; ton équipe joue maintenant en ${esc(teamSys())})`}</span></div>
       <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>`)}
-    ${step("time", 4, true, "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin && timeMode() !== "manual" ? " · minutes fixées" : ""),
+    ${step("time", 4, !budgetBlock(), "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin && timeMode() !== "manual" ? " · minutes fixées" : ""),
       `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
       <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]}${timeMode() === "manual" || timeMode() === "notes" ? "" : " Laisse une case vide pour le calcul automatique (en gris)."}</p>
       ${timeMode() === "manual" || timeMode() === "notes" ? "" : (() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
