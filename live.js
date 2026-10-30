@@ -15,8 +15,8 @@ function adjointView(){
   let plan = null;
   if (S.plan) { plan = JSON.parse(JSON.stringify(S.plan)); delete plan.targets; delete plan.played; delete plan.intervals; delete plan.warnings; delete plan.score; (plan.events || []).forEach(e => delete e.was); }
   return {teamName:S.teamName, color:S.color || DEFAULT_COLOR, profile:{club:S.profile?.club || ""}, matchLabel:S.matchLabel || "", matchDate:S.matchDate || "",
-    preset:S.preset, rules:S.rules, plan, sheet:S.sheet, hasPrev:!!S.prevPlan,
-    squad:S.squad.map(p => ({name:p.name, pos:p.pos, present:p.present, roles:p.roles || []}))};
+    preset:S.preset, system:teamSys(), rules:S.rules, plan, sheet:S.sheet, hasPrev:!!S.prevPlan,
+    squad:S.squad.map(p => ({name:p.name, pos:p.pos, ...(p.posBy ? {posBy:p.posBy} : {}), present:p.present, roles:p.roles || []}))};
 }
 // Le chrono voyage en « temps écoulé à l'envoi » : pas besoin que les deux téléphones aient la même heure.
 // Chaque action sur le chrono (pause, départ, réglage…) reçoit un numéro de version LV = {v, by} : v monte de 1

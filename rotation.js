@@ -543,7 +543,7 @@
   }
   // ---------- re-plan after an incident ----------
   function replan(plan, o) {
-    // o: {T, positions, players:[{name,pos,target,locked,oneBlock,maxStint}], rules, out:[names], vacate:[posIds], freezeUntil, freezeOut:[names], adjust:{name:+-min}, enter:{name,pos}, seed}
+    // o: {T, positions, players:[{name,pos,target,locked,oneBlock,maxStint}], rules, out:[names], vacate:[posIds], freezeUntil, freezeOut:[names], adjust:{name:+-min}, enter:{name,pos}, startOn:{name:pos}, seed}
     const END = o.rules.quarters * o.rules.qlen;
     const T = o.T, T1 = o.freezeUntil || T;
     const segAt = t => plan.segs.find(s => s.a <= t + EPS && t < s.b - EPS) || plan.segs[plan.segs.length - 1];
@@ -576,6 +576,7 @@
       if (segsA) { prefix.push(...segsA.map(s => ({ a: s.a, b: s.b, on: { ...s.on } }))); startOn = { ...segsA[segsA.length - 1].on }; fo.forEach(p => startOn[p] = cur[p]); }
       else prefix.push({ a: T, b: T1, on: fr });
     }
+    if (o.startOn) startOn = { ...o.startOn }; // changement de système : places choisies par le coach dans le nouveau système
     outSet.forEach(p => delete startOn[p]);
     if (o.swap) { const q = startOn[o.swap.out]; delete startOn[o.swap.out]; startOn[o.swap.in] = o.swap.pos || q; }
     if (o.enter) startOn[o.enter.name] = o.enter.pos; // remplaçant choisi par le coach (blessure)
@@ -726,6 +727,6 @@
     return { segs, changes, played, targets, intervals: iv, warnings: warnings || [], events, score: 0 };
   }
 
-  root.Rotation = { rq, chainMax, migrateRules, checkRules, buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
+  root.Rotation = { rq, chainMax, hungarian, migrateRules, checkRules, buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
   if (typeof module !== 'undefined') module.exports = root.Rotation;
 })(typeof window !== 'undefined' ? window : globalThis);

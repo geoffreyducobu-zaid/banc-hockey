@@ -101,10 +101,10 @@ function dragPlace(chip){
     const was = drag; drag = false; stop(); chip.classList.remove("dragging");
     if (!was) return;
     placeDragEnd = Date.now();
-    const p = S.squad[+chip.dataset.rmpos], sys = teamSys();
-    const U = placeUnits(p.pos, sys), order = [...box.querySelectorAll(".pchip")].map(c => c.dataset.q);
+    const p = S.squad[+chip.dataset.rmpos], sys = squadPS(), L = playerPos(p, sys);
+    const U = placeUnits(L, sys), order = [...box.querySelectorAll(".pchip")].map(c => c.dataset.q);
     const pos = order.flatMap(q => (U.find(u => u[0][0] === q) || [[q]])[0]);
-    if (pos.join() !== p.pos.join()) { p.pos = pos; preview = null; persist(); }
+    if (pos.join() !== L.join()) { setPlayerPos(p, sys, pos); preview = null; persist(); }
     render();
   };
   chip.addEventListener("contextmenu", e => e.preventDefault());
@@ -119,7 +119,8 @@ function dragPlace(chip){
 }
 // Places telles que l'effectif les montre : une par groupe. [ids, nom, abréviation]
 function placeUnits(pos, sys){ const out = []; expandPos(pos, sys).forEach(q => { const g = placeGroup(q, sys); if (g) { if (!out.some(u => u[0] === g[0])) out.push(g); } else out.push([[q], posName(q, sys), posShort(q, sys)]); }); return out; }
-const normPlaces = () => { const sys = teamSys(); S.squad.forEach(p => { p.pos = expandPos(p.pos, sys); }); };
+// Le système de l'équipe est toujours écrit : un match peut maintenant avoir son propre système (S.preset).
+const normPlaces = () => { if (!PRESETS[S.system] && PRESETS[S.preset]) S.system = S.preset; const sys = teamSys(); S.squad.forEach(p => { p.pos = expandPos(p.pos, sys); Object.keys(p.posBy || {}).forEach(k => { if (PRESETS[k] && k !== sys) p.posBy[k] = expandPos(p.posBy[k], k); else delete p.posBy[k]; }); }); };
 function nearPos(q, from, to){ // places les plus proches dans l'autre système (plusieurs si égalité, ex. back central -> les deux backs centraux)
   const a = (PRESETS[from] || []).find(x => x[0] === q); if (!a || !PRESETS[to]) return [];
   if (a[2] === "gk") return [PRESETS[to][0][0]];
@@ -127,22 +128,44 @@ function nearPos(q, from, to){ // places les plus proches dans l'autre système 
   const d = x => Math.hypot(x[3] - a[3], x[4] - a[4]), m = Math.min(...pool.map(d));
   return pool.filter(x => d(x) <= m + 3).map(x => x[0]);
 }
+// Places d'un joueur dans un autre système que celui de l'équipe (changement de système pendant un match) :
+// celles que le coach a fixées pour ce système dans l'effectif (p.posBy[système]), sans lien avec les autres systèmes.
+// Seul le gardien reste gardien partout.
+const deducePos = (pos, from, to) => expandPos([...new Set((pos || []).flatMap(q => nearPos(q, from, to)))], to);
+function playerPos(p, sys = S.preset){ const t = teamSys(); if (!p || sys === t || !PRESETS[sys]) return p?.pos || []; return p.posBy?.[sys] || ((p.pos || []).includes("G") ? ["G"] : []); }
+// Places pour le calcul : un joueur sans aucune place de champ dans ce système peut jouer partout sur le terrain.
+// Places du joueur dans le système du match (choisi dans Coach › Match) ; sans place dans ce système : partout.
+function mPos(p){ const L = playerPos(p, S.preset); return S.preset === teamSys() || L.some(q => q !== "G") || !(p.pos || []).some(q => q !== "G") ? L : calcPos(p, S.preset); }
+const lineOf = p => posMeta(mPos(p)[0], S.preset).line;
+function calcPos(p, sys){ const L = playerPos(p, sys); return L.some(q => q !== "G") || L.includes("G") ? L : PRESETS[sys].map(x => x[0]).filter(q => q !== "G"); }
+function setPlayerPos(p, sys, list){ if (sys === teamSys()) { p.pos = list; return; } p.posBy = {...(p.posBy || {})}; if (list.length) p.posBy[sys] = list; else delete p.posBy[sys]; }
 // keep = true : places adaptées au nouveau système ; false : on efface tout (sauf le gardien, le même partout).
 function setSystem(to, keep){
   const from = teamSys(); if (!PRESETS[to] || to === from) return;
-  S.squad.forEach(p => { p.pos = keep ? expandPos((p.pos || []).flatMap(q => nearPos(q, from, to)), to) : (p.pos || []).filter(q => q === "G"); });
+  const ready = S.squad.some(p => p.posBy?.[to]?.some(q => q !== "G"));
+  S.squad.forEach(p => {
+    const old = p.pos || [], mine = p.posBy?.[to];
+    p.pos = ready ? (mine || old.filter(q => q === "G")) : keep ? deducePos(old, from, to) : old.filter(q => q === "G");
+    p.posBy = {...(p.posBy || {})}; delete p.posBy[to]; if (old.some(q => q !== "G")) p.posBy[from] = old; // les places de l'ancien système restent pour un changement en match
+  });
   S.system = to;
-  S.matches.forEach(m => { if (m.id !== S.curMatch && !matchUsed(m)) { m.preset = to; m.lineup = {}; m.plan = m.prevPlan = m.basePlan = null; } });
+  S.matches.forEach(m => { if (m.id !== S.curMatch && !matchUsed(m) && !m.ownSys) { m.preset = to; m.lineup = {}; m.plan = m.prevPlan = m.basePlan = null; } });
   followSystem();
   posNote = keep ? `Les postes ont été adaptés au ${to}. Vérifie-les joueur par joueur.` : `Postes effacés : donne à chaque joueur ses places en ${to}.`;
 }
 // match enregistré ou commencé : il garde son système
 const matchUsed = m => !!(m.plan?.savedAt || (m.plan && m.clock && (m.clock.q > 1 || m.clock.elapsed > 0)));
 function followSystem(){
-  if (S.preset === teamSys() || S.plan?.savedAt || matchStarted()) return;
+  if (S.preset === teamSys() || S.ownSys || S.plan?.savedAt || matchStarted()) return;
   S.preset = teamSys(); S.lineup = {}; S.plan = S.prevPlan = S.basePlan = null; preview = null;
 }
-const posMeta = (id, sys = S.preset) => { const p = (PRESETS[sys] || PRESETS[S.preset]).find(x => x[0] === id); return p ? {id:p[0],label:p[1],line:p[2],x:p[3],y:p[4],short:p[5]||p[0]} : {id,label:id,line:"mid",x:50,y:50,short:id}; };
+// Système de jeu à l'instant t du match : celui du match, ou le dernier « changement de système » fait pendant le match.
+// Les postes (« 1 » à « 10 ») n'ont pas le même sens d'un système à l'autre : tout ce qui est montré pour un moment du match suit sysAt.
+function sysEvAt(t){ return (S.plan?.events || []).filter(e => e.type === "systeme" && e.t <= t + 1e-6).sort((a, b) => a.t - b.t).pop() || null; }
+const sysAt = t => (PRESETS[sysEvAt(t)?.to] ? sysEvAt(t).to : S.preset);
+const curSys = () => S.plan ? sysAt(matchT()) : S.preset;
+const isSysAt = t => (S.plan?.events || []).some(e => e.type === "systeme" && Math.abs(e.t - t) < 1e-6);
+const posMeta = (id, sys = curSys()) => { const p = (PRESETS[sys] || PRESETS[S.preset]).find(x => x[0] === id); return p ? {id:p[0],label:p[1],line:p[2],x:p[3],y:p[4],short:p[5]||p[0]} : {id,label:id,line:"mid",x:50,y:50,short:id}; };
 const posName = (id, sys) => posMeta(id, sys).label;
 const posShort = (id, sys) => posMeta(id, sys).short;
 const fmtClock = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`; };
@@ -175,10 +198,10 @@ function paintSub(){ const bn = $("#brandName"); if (bn) { const t = S.teamName 
 function paintSave(){ const el = $("#saveState"); if (el) el.textContent = saveState; }
 
 /* ---------- plan helpers ---------- */
-function minStintOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? +S.rules.minDef : (l === "dm" || l === "mid") ? +S.rules.minMid : l === "att" ? +S.rules.minAtt : 0; }
+function minStintOf(p){ const l = lineOf(p); return l === "def" ? +S.rules.minDef : (l === "dm" || l === "mid") ? +S.rules.minMid : l === "att" ? +S.rules.minAtt : 0; }
 // 1er passage des titulaires : pas encore réglé = même chiffre que le minimum normal
 const firstOf = k => +(S.rules["first" + k] ?? S.rules["min" + k]);
-function minStartOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? firstOf("Def") : (l === "dm" || l === "mid") ? firstOf("Mid") : l === "att" ? firstOf("Att") : 0; }
+function minStartOf(p){ const l = lineOf(p); return l === "def" ? firstOf("Def") : (l === "dm" || l === "mid") ? firstOf("Mid") : l === "att" ? firstOf("Att") : 0; }
 function matchTitle(){
   const parts = [];
   if (S.matchLabel) parts.push(S.matchLabel);
@@ -190,15 +213,15 @@ function computeTargets(){
   const END = S.rules.quarters * S.rules.qlen;
   const ids = PRESETS[S.preset].map(p => p[0]);
   const gk = ids[0];
-  const P = present().map(p => ({name:p.name, note: isMainGk(p) ? 5 : 3, override: p.minutes ? +p.minutes : 0, field: p.pos.some(q => q !== gk)}));
+  const P = present().map(p => ({name:p.name, note: isMainGk(p) ? 5 : 3, override: p.minutes ? +p.minutes : 0, field: mPos(p).some(q => q !== gk)}));
   const tm = timeMode(), byNotes = R.targetsFromNotes(P, ids.length - 1, END).targets;
   // Plan automatique : chaque joueur joue les minutes que le coach lui donne (0 si la case est vide), le gardien titulaire tout le match.
   if (tm === "notes") { const out = {}; P.forEach(x => out[x.name] = x.override ? x.override : x.note >= 5 ? END : 0); return out; }
   if (tm === "manual") return byNotes;
   // Égal pour tous : un seul groupe. Égal par ligne : la ligne du premier poste du joueur.
-  const groupOf = id => tm === "all" ? "all" : lineGroup(posMeta(id).line);
-  const slots = {}; ids.slice(1).forEach(id => slots[groupOf(id)] = (slots[groupOf(id)] || 0) + 1);
-  P.forEach(x => { const pl = present().find(p => p.name === x.name); x.group = groupOf(pl.pos.find(q => q !== gk) || ""); });
+  const groupOf = (id, sys = teamSys()) => tm === "all" ? "all" : lineGroup(posMeta(id, sys).line);
+  const slots = {}; ids.slice(1).forEach(id => slots[groupOf(id, S.preset)] = (slots[groupOf(id, S.preset)] || 0) + 1);
+  P.forEach(x => { const pl = present().find(p => p.name === x.name); x.group = groupOf(mPos(pl).find(q => q !== gk) || "", S.preset); });
   const eq = R.targetsEqual(P, slots, END).targets;
   P.forEach(x => { if (!x.field) eq[x.name] = byNotes[x.name]; }); // le gardien garde son calcul habituel
   return eq;
@@ -206,7 +229,7 @@ function computeTargets(){
 // Minutes de terrain à répartir (joueurs de champ) : total, déjà fixées, reste.
 function minBudget(){
   const END = S.rules.quarters * S.rules.qlen, ids = PRESETS[S.preset].map(p => p[0]), gk = ids[0];
-  const field = present().filter(p => p.pos.some(q => q !== gk));
+  const field = present().filter(p => mPos(p).some(q => q !== gk));
   const fixedOf = p => +p.minutes > 0 ? Math.min(END, +p.minutes) : 0;
   const total = (ids.length - 1) * END, used = field.reduce((a, p) => a + fixedOf(p), 0);
   return {END, slots: ids.length - 1, total, left: total - used, auto: timeMode() === "notes" ? 0 : field.filter(p => !fixedOf(p)).length};
@@ -221,8 +244,8 @@ function budgetLine(){
   // Égal pour tous / par ligne : l'app partage elle-même ce qui reste, il n'y a rien à distribuer à la main.
   if (!over && !done && b.auto && timeMode() !== "notes") {
     const T = computeTargets(), gk = PRESETS[S.preset][0][0], fixed = b.total - b.left > 0.01;
-    const auto = present().filter(p => p.pos.some(q => q !== gk) && !(+p.minutes > 0)), avg = L => R.fmtMin(L.reduce((a, p) => a + (T[p.name] || 0), 0) / L.length);
-    const LN = {def: "Défense", mid: "Milieu", att: "Attaque"}, grp = p => lineGroup(posMeta(p.pos.find(q => q !== gk) || "").line);
+    const auto = present().filter(p => mPos(p).some(q => q !== gk) && !(+p.minutes > 0)), avg = L => R.fmtMin(L.reduce((a, p) => a + (T[p.name] || 0), 0) / L.length);
+    const LN = {def: "Défense", mid: "Milieu", att: "Attaque"}, grp = p => lineGroup(posMeta(mPos(p).find(q => q !== gk) || "", S.preset).line);
     const per = timeMode() === "all" ? `environ ${avg(auto)} par joueur` : ["def", "mid", "att"].map(g => auto.filter(p => grp(p) === g)).map((L, i) => L.length ? `${LN[["def", "mid", "att"][i]]} ${avg(L)}` : "").filter(Boolean).join(" · ") + " par joueur";
     return `<div class="budget ok"><div class="budget-big">0' à distribuer : tout est réparti</div>
     <div class="budget-bar"><i style="width:100%"></i></div>
@@ -243,17 +266,17 @@ const lineGroup = l => l === "def" ? "def" : l === "att" ? "att" : "mid";
 const TIME_MODES = [["notes","Plan automatique"],["all","Égal pour tous"],["line","Égal par ligne"],["manual","Plan manuel"]];
 // Un joueur de champ fixé à la durée du match joue tout le match d'un bloc.
 // Le gardien de la compo de départ (s'il ne joue que gardien) garde le but tout le match, sauf minutes fixées.
-const isMainGk = p => S.lineup.G === p.name && !p.pos.some(q => q !== "G") && !(+p.minutes > 0);
-const fullMatch = p => isMainGk(p) || (+p.minutes >= S.rules.quarters * S.rules.qlen - 1e-6 && p.pos.some(q => q !== "G"));
+const isMainGk = p => S.lineup.G === p.name && !mPos(p).some(q => q !== "G") && !(+p.minutes > 0);
+const fullMatch = p => isMainGk(p) || (+p.minutes >= S.rules.quarters * S.rules.qlen - 1e-6 && mPos(p).some(q => q !== "G"));
 function syncMinStint(){ S.rules.minStint = Math.min(+S.rules.minDef, +S.rules.minMid, +S.rules.minAtt); S.rules.maxStint = Math.max(+S.rules.maxDef, +S.rules.maxMid, +S.rules.maxAtt); }
 // Maximum d'affilée selon la ligne du 1er poste (le gardien garde le maximum général)
-function maxStintOf(p){ const l = posMeta(p.pos[0]).line; return l === "def" ? +S.rules.maxDef : (l === "dm" || l === "mid") ? +S.rules.maxMid : l === "att" ? +S.rules.maxAtt : +S.rules.maxStint; }
+function maxStintOf(p){ const l = lineOf(p); return l === "def" ? +S.rules.maxDef : (l === "dm" || l === "mid") ? +S.rules.maxMid : l === "att" ? +S.rules.maxAtt : +S.rules.maxStint; }
 function generate(seed){
   syncMinStint();
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
   // Plan automatique : un joueur à 0 minute reste sur le banc tout le match.
-  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:p.pos, rank: placeRank(p.pos, S.preset), target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p), minStart: minStartOf(p), stay: stayOf(p.name)}));
+  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:mPos(p), rank: placeRank(mPos(p), S.preset), target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p), minStart: minStartOf(p), stay: stayOf(p.name)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -277,10 +300,15 @@ function visChanges(plan){
       if (timedCard(e.type) && (Math.abs(c.t-e.t)<1e-6 || Math.abs(c.t-(e.t+e.d))<1e-6)) skip.add(e.player);
       if (e.type==="rouge" && Math.abs(c.t-e.t)<1e-6) skip.add(e.player);
     });
+    const sw = ev.find(e => e.type === "systeme" && Math.abs(c.t - e.t) < 1e-6);
+    if (sw) c = {...c, sys:sw};
     if (!skip.size) return c;
     const c2 = {...c, ins:c.ins.filter(x=>!skip.has(x[0])), outs:c.outs.filter(x=>!skip.has(x[0]))};
-    return (c2.ins.length||c2.outs.length||c2.moves.length) ? c2 : null;
+    return (c2.ins.length||c2.outs.length||c2.moves.length||c2.sys) ? c2 : null;
   }).filter(Boolean);
+  // Un changement de système est toujours annoncé, même si personne ne change de numéro de place.
+  ev.filter(e => e.type === "systeme" && !_vc.some(c => Math.abs(c.t - e.t) < 1e-6)).forEach(e => _vc.push({t:e.t, ins:[], outs:[], moves:[], sys:e}));
+  _vc.sort((a, b) => a.t - b.t);
   _vcPlan = plan; return _vc;
 }
 function segAt(plan, t){ return plan.segs.find(s => s.a <= t + 1e-6 && t < s.b - 1e-6) || plan.segs[plan.segs.length-1]; }
@@ -303,7 +331,7 @@ function nextQuarter(){ if (C.q >= S.rules.quarters) return; C.running = false; 
 /* ---------- plusieurs matchs ---------- */
 // Le match ouvert vit dans S (plan, compo, feuille, présents) et le chrono dans C.
 // Les autres matchs sont rangés dans S.matches ; on échange en changeant de match.
-const MATCH_KEYS = ["matchLabel","matchDate","preset","timeMode","lineup","plan","prevPlan","basePlan","sheet","manual"];
+const MATCH_KEYS = ["matchLabel","matchDate","preset","ownSys","timeMode","lineup","plan","prevPlan","basePlan","sheet","manual"];
 const freshClock = () => ({q:1,elapsed:0,running:false,startedAt:0,done:[]});
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 let matchesOpen = false, newMatchForm = false, delPin = null;
@@ -389,7 +417,7 @@ function openMatch(id, store = true){
   const r = S.matches.find(m => m.id === id); if (!r) return;
   S.curMatch = id;
   S.matchLabel = r.matchLabel || ""; S.matchDate = r.matchDate || "";
-  S.preset = r.preset || S.preset; S.timeMode = r.timeMode || "notes"; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null; S.manual = r.manual || [];
+  S.preset = r.preset || S.preset; S.ownSys = !!r.ownSys; S.timeMode = r.timeMode || "notes"; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null; S.manual = r.manual || [];
   S.sheet = r.sheet || {us:[], them:[], pc:0, log:[]};
   if (Array.isArray(r.present)) S.squad.forEach(p => p.present = r.present.includes(p.name));
   C = r.clock || freshClock(); C.running = false;
@@ -481,19 +509,26 @@ function playedUntil(plan, n, t){ return plan.segs.reduce((a, s) => a + (n in s.
 function injuryBench(seg, p, T){
   const q = seg.on[p], tg = S.plan.targets || {};
   return present().filter(x => !(x.name in seg.on) && !outForGood().includes(x.name))
-    .map(x => ({name:x.name, knows: x.pos.includes(q) || extraPos(x.name).includes(q), line: x.pos.some(z => lineGroup(posMeta(z).line) === lineGroup(posMeta(q).line)), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
+    .map(x => ({name:x.name, knows: playerPos(x, sysAt(T)).includes(q) || extraPos(x.name, T).includes(q), line: playerPos(x, sysAt(T)).some(z => lineGroup(posMeta(z, sysAt(T)).line) === lineGroup(posMeta(q, sysAt(T)).line)), left: (tg[x.name] || 0) - playedUntil(S.plan, x.name, T)}))
     .sort((a,b) => (b.knows - a.knows) || (b.line - a.line) || (ADJ ? a.name.localeCompare(b.name) : b.left - a.left));
 }
 // Postes ajoutés en cours de match (joueur mis hors de son poste pour remplacer un blessé).
-function extraPos(n){ return eventsOf().filter(e => e.inP === n && e.extraPos).map(e => e.extraPos); }
-function replanBase(T){
-  const positions = PRESETS[S.preset].map(x => ({id:x[0], gk:x[2]==="gk"}));
+// (seulement depuis le dernier changement de système : avant, les postes ne voulaient pas dire la même chose)
+const sinceSys = (e, t = matchT()) => { const s = sysEvAt(t); return !s || e.t >= s.t - 1e-6; };
+function extraPos(n, t){ return eventsOf().filter(e => e.inP === n && e.extraPos && sinceSys(e, t)).map(e => e.extraPos); }
+// sw = {to, on:{nom: poste}} : recalcul pour un changement de système à T (sinon le système en place à T).
+function replanBase(T, sw){
+  const sys = sw ? sw.to : sysAt(T), se = sw ? null : sysEvAt(T);
+  const positions = PRESETS[sys].map(x => ({id:x[0], gk:x[2]==="gk"}));
   const Tg = computeTargets();
   // Plan automatique : un joueur à 0 minute reste hors du plan, sauf s'il a joué ou si le coach le fait entrer.
   const sits = x => S.plan.timeMode === "notes" && !(S.plan.targets?.[x.name] > 0) && !(playedUntil(S.plan, x.name, T) > 0) && !eventsOf().some(e => e.inP === x.name) && inc?.inP !== x.name;
-  const posOf = x => { const L = [...x.pos, ...extraPos(x.name).filter(q => !x.pos.includes(q))], v = invPos(x.name); return v ? [v, ...L.filter(q => q !== v)] : L; };
-  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:posOf(x), rank: placeRank(posOf(x), S.preset), target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x), stay: stayOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])])}));
-  const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate: eventsOf().filter(e => e.type==="rouge").map(e => e.pos), seed: Date.now()%100000, adjust: {}};
+  const posOf = x => { const P = sw || sys !== teamSys() ? calcPos(x, sys) : playerPos(x, sys), L = sw ? [...P] : [...P, ...extraPos(x.name, T).filter(q => !P.includes(q))], v = sw ? sw.on[x.name] : invPos(x.name, T); return v ? [v, ...L.filter(q => q !== v)] : L; };
+  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:posOf(x), rank: placeRank(posOf(x), sys), target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x), stay: stayOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])])}));
+  // places laissées vides par un carton rouge (dans le système en place ; un changement de système dit lui-même lesquelles)
+  const vacate = sw ? sw.vacate : [...(se?.vacate || []), ...eventsOf().filter(e => e.type==="rouge" && (!se || e.t >= se.t - 1e-6)).map(e => e.pos)];
+  const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate, seed: Date.now()%100000, adjust: {}};
+  if (sw) o.startOn = {...sw.on};
   // (le temps retiré par les cartons précédents est déjà compté dans S.plan.targets)
   return o;
 }
@@ -522,10 +557,25 @@ function endInjury(n, catchUp = true){
   applyPlan(res);
 }
 function doIncident(){
-  if (inc.pending) { applyPlan(inc.pending); return; }
+  if (inc.pending) { const {off, ev, recalc, ...p} = inc.pending; applyPlan(p); return; }
   const T = Math.floor(matchT()*10)/10;
   const type = inc.type, p = inc.player, info = INC[type] || {d:0};
   const seg = segAt(S.plan, T);
+  if (type === "systeme") {
+    const T = sysT(), seg = segAt(S.plan, T), on = {};
+    Object.entries(inc.asg).forEach(([q, n]) => { if (n) on[n] = q; });
+    if (Object.keys(seg.on).some(n => !(n in on)) || Object.keys(on).some(n => !(n in seg.on))) { inc.key = null; incMsg = "Un changement vient d'avoir lieu : vérifie les places puis valide."; incBusy = false; render(); return; }
+    const ev = {t:T, type:"systeme", from:sysAt(T - 1e-3), to:inc.to, on, vacate:PRESETS[inc.to].map(x => x[0]).filter(q => !inc.asg[q])};
+    const res = replacePlan(S.plan, ev);
+    if (res) { applyPlan(res); return; }
+    // Personne pour une place à un moment du plan : le coach choisit entre garder les changements prévus
+    // (quelqu'un joue alors hors de ses places) et recalculer la suite (temps déjà joué, temps prévu et règles).
+    const lo = replacePlan(S.plan, ev, true);
+    if (!lo) { sysRecalc(ev); return; }
+    const pl = n => S.squad.find(x => x.name === n), off = [];
+    lo.segs.forEach(s => { if (s.a < T + 1e-6) return; Object.entries(s.on).forEach(([n, q]) => { if (placeRk(pl(n), ev.to, q) < 0 && ev.on[n] !== q && !off.some(o => o.n === n && o.q === q)) off.push({n, q, t:s.a}); }); });
+    lo.off = off; lo.ev = ev; inc.pending = lo; incBusy = false; render(); return;
+  }
   // Hors plan entre deux joueurs du terrain : ils échangent leurs places, les changements prévus restent les mêmes.
   if (type === "libre" && inc.inv) {
     const ev = {t:T, type:"inverse", player:p, inP:inc.inP, pos:seg.on[p] || null, pos2:seg.on[inc.inP] || null};
@@ -581,7 +631,7 @@ function doIncident(){
 // Sinon, à ce changement-là, tout le monde reprend la place prévue par le plan. Les minutes et les changements ne bougent pas.
 function invertPlan(plan, ev){
   const T = ev.t, sw = q => q === ev.pos ? ev.pos2 : q === ev.pos2 ? ev.pos : q;
-  const knows = (n, q) => (S.squad.find(x => x.name === n)?.pos || []).includes(q) || extraPos(n).includes(q) || invPos(n) === q;
+  const knows = (n, q) => playerPos(S.squad.find(x => x.name === n), sysAt(T)).includes(q) || extraPos(n, T).includes(q) || invPos(n, T) === q;
   const segs = [], free = new Set([ev.player, ev.inP]); let on = true, prev = null;
   plan.segs.forEach(s => {
     if (s.b <= T + 1e-6) { segs.push({...s, on:{...s.on}}); return; }
@@ -591,16 +641,103 @@ function invertPlan(plan, ev){
     const o = on ? Object.fromEntries(Object.entries(s.on).map(([n, q]) => [n, sw(q)])) : {...s.on};
     segs.push({...s, a:Math.max(s.a, T), on:o}); prev = s.on;
   });
+  return {...plan, segs, changes:segChanges(segs), events:[...(plan.events || []), ev]};
+}
+function segChanges(segs){
   const changes = [];
   for (let i = 1; i < segs.length; i++) {
     const A = segs[i-1].on, B = segs[i].on;
     const ins = Object.keys(B).filter(n => !(n in A)).map(n => [n, B[n]]), outs = Object.keys(A).filter(n => !(n in B)).map(n => [n, A[n]]), moves = Object.keys(B).filter(n => n in A && A[n] !== B[n]).map(n => [n, A[n], B[n]]);
     if (ins.length || outs.length || moves.length) changes.push({t:segs[i].a, ins, outs, moves});
   }
-  return {...plan, segs, changes, events:[...(plan.events || []), ev]};
+  return changes;
+}
+/* ---------- changement de système pendant le match ---------- */
+// Rang d'une place pour un joueur dans un système (places d'un même groupe : même rang), -1 s'il ne la joue pas.
+function placeRk(p, sys, q){ const L = playerPos(p, sys), i = L.indexOf(q); if (i >= 0) return placeRank(L, sys)[i]; return calcPos(p, sys).includes(q) ? 5 : -1; }
+// Chaque joueur à une place (moins cher d'abord). null si quelqu'un n'a aucune place possible.
+function assignPlaces(names, ids, cost){
+  const n = Math.max(names.length, ids.length), M = [];
+  for (let i = 0; i < n; i++) M.push(Array.from({length:n}, (_, j) => i < names.length ? (j < ids.length ? cost(names[i], ids[j]) : 1e9) : 0));
+  const a = R.hungarian(M), out = {};
+  for (let i = 0; i < names.length; i++) { if (a[i] >= ids.length || M[i][a[i]] >= 1e9) return null; out[names[i]] = ids[a[i]]; }
+  return out;
+}
+// Placement proposé dans le nouveau système : ses places d'abord, puis la plus proche de là où il joue. {poste: nom}
+function autoSysAsg(on, from, to){
+  const ids = PRESETS[to].map(x => x[0]), pl = n => S.squad.find(x => x.name === n);
+  const xy = (q, s) => { const m = posMeta(q, s); return [m.x, m.y]; };
+  const r = assignPlaces(Object.keys(on), ids, (n, q) => {
+    const gk = on[n] === "G"; if (gk !== (q === "G")) return 1e9;
+    const k = placeRk(pl(n), to, q), [x1, y1] = xy(on[n], from), [x2, y2] = xy(q, to);
+    return (k < 0 ? 100 : k * 10) + Math.hypot(x2 - x1, y2 - y1) / 10;
+  }) || {};
+  return Object.fromEntries(ids.map(q => [q, Object.keys(r).find(n => r[n] === q) || ""]));
+}
+// Changement de système à ev.t : on garde exactement les mêmes changements (qui, quand), seules les places changent.
+// Après T, chaque morceau du plan est replacé dans le nouveau système en bougeant le moins de monde possible.
+// null si quelqu'un n'a plus de place possible à un moment : on recalcule alors la suite du plan.
+// loose : si personne ne connaît une place à un moment, on y met quand même quelqu'un (hors de ses places), le moins souvent possible.
+function replacePlan(plan, ev, loose){
+  const T = ev.t, ids = PRESETS[ev.to].map(x => x[0]).filter(q => !ev.vacate.includes(q)), pl = n => S.squad.find(x => x.name === n);
+  const segs = []; let prev = null;
+  for (const s of plan.segs) {
+    if (s.b <= T + 1e-6) { segs.push({...s, on:{...s.on}}); continue; }
+    if (s.a < T - 1e-6) segs.push({...s, b:T, on:{...s.on}});
+    let on;
+    if (!prev) { const N = Object.keys(s.on); if (N.length !== Object.keys(ev.on).length || N.some(n => !(n in ev.on))) return null; on = {...ev.on}; }
+    else {
+      on = assignPlaces(Object.keys(s.on), ids, (n, q) => {
+        const gk = s.on[n] === "G"; if (gk !== (q === "G")) return 1e9;
+        const k = ev.on[n] === q ? 0 : placeRk(pl(n), ev.to, q); if (k < 0) return loose ? 1000 : 1e9;
+        return k * 2 + (prev[n] && prev[n] !== q ? 5 : 0);
+      });
+      if (!on) return null;
+    }
+    segs.push({...s, a:Math.max(s.a, T), on}); prev = on;
+  }
+  return {...plan, segs, changes:segChanges(segs), events:[...(plan.events || []), ev]};
+}
+function sysRecalc(ev){
+  const r2 = R.replan(S.plan, replanBase(ev.t, ev));
+  if (r2.error) { incMsg = r2.warnings.join(" "); inc.pending = null; incBusy = false; render(); return; }
+  r2.events = [...eventsOf(), ev]; r2.recalc = true;
+  inc.pending = r2; incBusy = false; render();
+}
+// Moment de la prochaine pause (null au dernier quart). En fin de quart, la pause, c'est maintenant.
+function breakT(){
+  const ql = +S.rules.qlen, el = clockElapsed();
+  if (el >= ql*60 - 0.5) return C.q < S.rules.quarters ? C.q*ql : null;
+  if (el < 0.5 && C.q > 1) return (C.q-1)*ql;
+  return C.q < S.rules.quarters ? C.q*ql : null;
+}
+const sysT = () => inc?.when === "pause" && breakT() !== null ? breakT() : Math.floor(matchT()*10)/10;
+const cardAt = T => eventsOf().some(e => timedCard(e.type) && T >= e.t - 1e-6 && T < e.t + e.d - 1e-6);
+function sysPanel(){
+  const T = sysT(), from = sysAt(T - 1e-3), seg = segAt(S.plan, T), names = Object.keys(seg.on);
+  const opts = Object.keys(PRESETS).filter(k => k !== from);
+  if (!opts.includes(inc.to)) inc.to = opts[0];
+  const key = inc.to + "|" + T + "|" + names.join();
+  if (inc.key !== key) { inc.asg = autoSysAsg(seg.on, from, inc.to); inc.key = key; }
+  const placed = Object.values(inc.asg).filter(Boolean), ok = names.every(n => placed.filter(x => x === n).length === 1);
+  const bq = breakT(), pl = n => S.squad.find(x => x.name === n);
+  const strange = Object.entries(inc.asg).filter(([q, n]) => n && placeRk(pl(n), inc.to, q) < 0).map(([q, n]) => `${n} (${gName(q, inc.to).toLowerCase()})`);
+  return `<div class="card incp"><h2>Changer de système</h2>
+    <p class="muted" style="margin:0 0 8px;font-size:.9rem">Les changements prévus restent les mêmes (qui entre, qui sort, quand) : seules les places suivent le nouveau système. Pour ce match seulement.</p>
+    <div class="muted" style="margin:0 0 6px;font-size:.9rem">Nouveau système (maintenant : ${esc(from)})</div>
+    <div class="inc-players">${opts.map(k => `<button class="btn" data-systo="${k}" aria-pressed="${inc.to === k}">${k}</button>`).join("")}</div>
+    <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quand ?</div>
+    <div class="inc-players"><button class="btn" data-syswhen="now" aria-pressed="${inc.when !== "pause" || bq === null}">Maintenant</button>${bq !== null && Math.abs(bq - Math.floor(matchT()*10)/10) > 0.05 ? `<button class="btn" data-syswhen="pause" aria-pressed="${inc.when === "pause"}">À la pause (avant ${pThe(Math.round(bq / S.rules.qlen) + 1)})</button>` : ""}</div>
+    <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui joue où ? ${(n => n.length ? `(proposé d'après leurs places en ${esc(inc.to)}${n.length < names.length ? ` ; sans place en ${esc(inc.to)} : ${esc(names.filter(x => !n.includes(x)).join(", "))}, placés au plus près de leur place actuelle` : ""})` : `(tu n'as pas encore mis de places en ${esc(inc.to)} dans Coach › Effectif : proposé au plus près de leur place actuelle)`)(names.filter(n => playerPos(pl(n), inc.to).some(q => q !== "G") || seg.on[n] === "G"))}</div>
+    <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${PRESETS[inc.to].map(([id, label, line, x, y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(gShort(id, inc.to))}</span><select data-sysq="${id}" aria-label="${esc(label)}"><option value="">Vide</option>${names.map(n => `<option ${inc.asg[id] === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>`).join("")}</div>
+    ${strange.length ? `<div class="muted" style="margin-top:8px;font-size:.88rem">Hors de leurs places en ${esc(inc.to)} : ${esc(strange.join(", "))}. C'est permis.</div>` : ""}
+    ${cardAt(T) ? `<div class="warn" style="margin-top:10px">Un carton est en cours : attends le retour du joueur pour changer de système.</div>` : !ok ? `<div class="warn" style="margin-top:10px">Chaque joueur du terrain doit avoir une place (une seule).</div>` : ""}
+    ${incMsg ? `<div class="warn" style="margin-top:10px">${esc(incMsg)}</div>` : ""}
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo" ${ok && !cardAt(T) && !incBusy ? "" : "disabled"}>${incBusy ? "Calcul…" : "Valider"}</button><button class="btn" id="incCancel">Annuler</button></div>
+  </div>`;
 }
 // Place prise par un joueur lors de son dernier échange de places sur le terrain (gardée comme préférence ensuite).
-function invPos(n){ const e = eventsOf().filter(x => x.type === "inverse" && (x.player === n || x.inP === n)).pop(); return e ? (e.player === n ? e.pos2 : e.pos) : null; }
+function invPos(n, t){ const e = eventsOf().filter(x => ((x.type === "inverse" && (x.player === n || x.inP === n)) || (x.type === "systeme" && x.on?.[n])) && sinceSys(x, t)).sort((a, b) => a.t - b.t).pop(); return !e ? null : e.type === "systeme" ? e.on[n] : e.player === n ? e.pos2 : e.pos; }
 function activeBanners(t){
   const out = [];
   eventsOf().forEach(e => {
@@ -618,7 +755,7 @@ function swapPanel(seg){
   if (!inc || inc.type !== "libre") return "";
   const onField = Object.keys(seg.on).filter(n => !/G/.test(seg.on[n]) || n === inc.player);
   const outQ = inc.player ? seg.on[inc.player] : null;
-  const canQ = n => outQ && (S.squad.find(p => p.name === n)?.pos || []).includes(outQ);
+  const canQ = n => outQ && playerPos(S.squad.find(p => p.name === n), curSys()).includes(outQ);
   const bench = present().map(p=>p.name).filter(n => !(n in seg.on) && !outForGood().includes(n)).sort((a,b) => canQ(b) - canQ(a));
   const mates = inc.player ? Object.keys(seg.on).filter(n => n !== inc.player && !/G/.test(seg.on[n])) : [];
   const inQ = inc.inv && inc.inP ? seg.on[inc.inP] : null;
@@ -637,8 +774,21 @@ function swapPanel(seg){
 function incidentPanel(seg){
   if (!inc) return "";
   if (inc.type === "libre" && !inc.pending) return swapPanel(seg);
+  if (inc.type === "systeme" && !inc.pending) return sysPanel();
   const onField = Object.keys(seg.on);
   const card = timedCard(inc.type);
+  if (inc.pending?.off) return `<div class="card incp"><h2>À savoir</h2>
+    <p style="margin:0 0 8px">Avec les changements prévus, à certains moments personne sur le terrain n'a cette place en ${esc(inc.to)} :</p>
+    <div class="warn">${inc.pending.off.map(o => `${esc(fmtQ(o.t).q ? pShort(fmtQ(o.t).q) + " " + fmtQ(o.t).label : "")} : ${esc(o.n)} jouera ${esc(lc(o.q, inc.to))}`).join("<br>")}</div>
+    <p class="muted" style="margin:8px 0 0;font-size:.92rem">Tu peux garder les changements prévus comme ça, ou recalculer la suite du plan (temps déjà joué, temps prévu et règles) : les changements à venir seront alors différents.</p>
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo">Garder les changements</button><button class="btn" id="sysRecalc" ${incBusy ? "disabled" : ""}>${incBusy ? "Calcul…" : "Recalculer la suite"}</button><button class="btn" id="incBack">Revenir</button></div>
+  </div>`;
+  if (inc.pending?.recalc) return `<div class="card incp"><h2>À savoir</h2>
+    <p style="margin:0 0 8px">La suite du plan a été recalculée avec les places de tes joueurs en ${esc(inc.to)}, en tenant compte du temps déjà joué, du temps prévu et des règles : les changements à venir ne sont plus les mêmes.</p>
+    ${inc.pending.warnings.length ? `<div class="warn">${inc.pending.warnings.map(w => esc(nicePos(w))).join("<br>")}</div>` : ""}
+    <p class="muted" style="margin:8px 0 0;font-size:.92rem">Pour l'éviter, donne plus de places à tes joueurs en ${esc(inc.to)} dans Coach › Effectif.</p>
+    <div class="row" style="margin-top:12px"><button class="btn go big" id="incGo">Valider</button><button class="btn" id="incBack">Revenir</button></div>
+  </div>`;
   if (inc.pending?.fresh) return `<div class="card incp"><h2>À savoir</h2>
     <p style="margin:0 0 8px">Avec cet imprévu, ces changements de ta liste ne sont plus possibles et seront sautés :</p>
     <div class="warn">${inc.pending.fresh.map(w => esc(w)).join("<br>")}</div>
@@ -703,7 +853,7 @@ async function makePdf(){
     line(`${teamTitle()} - plan de rotation`, 16, true);
     line(`${matchTitle() || new Date().toLocaleDateString("fr-BE")} - ${S.preset}`, 11, true);
     y += 2; line("Compo de départ", 12, true);
-    PRESETS[S.preset].forEach(([id,label]) => line(`${label} : ${Object.entries(plan.segs[0].on).find(([p,q]) => q===id)?.[0] || "-"}`, 10, false, 18));
+    PRESETS[sysAt(0)].forEach(([id,label]) => line(`${label} : ${Object.entries(plan.segs[0].on).find(([p,q]) => q===id)?.[0] || "-"}`, 10, false, 18));
     for (let q = 1; q <= S.rules.quarters; q++) {
       y += 3; line(halves() ? `${q === 1 ? "1re" : q + "e"} mi-temps` : `Quart ${q}`, 13, true);
       const list = visChanges(plan).filter(c => (q > 1 && Math.abs(c.t-(q-1)*ql) < 1e-6) || (c.t > (q-1)*ql + 1e-6 && c.t < q*ql - 1e-6));
@@ -711,8 +861,10 @@ async function makePdf(){
       list.forEach(c => {
         const lab = Math.abs(c.t-(q-1)*ql) < 1e-6 ? "Pause" : fmtQ(c.t).label;
         line(lab, 11, true, 16);
-        pairChanges(c).forEach(pr => line(`${pr.inP || "-"} remplace ${pr.outP || "-"}${pr.inQ ? "  (" + gName(pr.inQ) + ")" : ""}`, 10, false, 30));
-        moveGroups(c).forEach(g => line(`Changement de poste : ${moveText(g).replace(/→/g, "->")}`, 9, false, 30)); // la police du PDF n'a pas la flèche
+        const sb = sysAt(c.t);
+        pairChanges(c).forEach(pr => line(`${pr.inP || "-"} remplace ${pr.outP || "-"}${pr.inQ ? "  (" + gName(pr.inQ, sb) + ")" : ""}`, 10, false, 30));
+        if (c.sys) { line(`Nouveau système : ${c.sys.to}`, 10, true, 30); sysLines(c).forEach(([n, q]) => line(`${gName(q, sb)} : ${n}`, 9, false, 34)); }
+        else moveGroups(c).forEach(g => line(`Changement de poste : ${moveText(g, sb).replace(/→/g, "->")}`, 9, false, 30)); // la police du PDF n'a pas la flèche
       });
     }
     doc.save(`plan-b-${slug(S.teamName || "equipe")}.pdf`);
@@ -885,18 +1037,21 @@ function keepNumber(v){
 }
 function goTo(m){ if (m === mode) return; mode = m; inc = null; helpOpen = null; render(); window.scrollTo(0, 0); }
 // Dans le plan et pendant le match : place générale (« Milieu déf. »), sans le côté. Seule la compo de départ dit le côté.
-const gName = (id, sys = S.preset) => placeGroup(id, sys)?.[1] || posName(id, sys);
-const gShort = (id, sys = S.preset) => placeGroup(id, sys)?.[2] || posShort(id, sys);
-function pill(id){ const m = posMeta(id); return `<span class="pos ${m.line}" title="${esc(gName(id))}">${esc(gShort(id))}</span>`; }
+const gName = (id, sys = curSys()) => placeGroup(id, sys)?.[1] || posName(id, sys);
+const gShort = (id, sys = curSys()) => placeGroup(id, sys)?.[2] || posShort(id, sys);
+function pill(id, sys = curSys()){ const m = posMeta(id, sys); return `<span class="pos ${m.line}" title="${esc(gName(id, sys))}">${esc(gShort(id, sys))}</span>`; }
 
 function pairChanges(ch){
   const outs = ch.outs.map(([p,q]) => ({p,q})), ins = ch.ins.map(([p,q]) => ({p,q}));
   const pairs = [], usedO = new Set(), usedI = new Set();
   const tryPair = test => ins.forEach((i,ii) => { if (usedI.has(ii)) return; const oi = outs.findIndex((o,k) => !usedO.has(k) && test(i,o)); if (oi >= 0) { usedI.add(ii); usedO.add(oi); pairs.push({inP:i.p, inQ:i.q, outP:outs[oi].p, outQ:outs[oi].q}); } });
-  tryPair((i,o) => i.q === o.q);
-  // chain through a mover: someone left post o.q free and moved, the newcomer takes the mover's old post
-  tryPair((i,o) => ch.moves.some(([m,a,b]) => b === o.q && a === i.q));
-  tryPair((i,o) => posMeta(i.q).line === posMeta(o.q).line);
+  const sb = sysAt(ch.t), sa = sysAt(ch.t - 1e-3);
+  if (!ch.sys) {
+    tryPair((i,o) => i.q === o.q);
+    // chain through a mover: someone left post o.q free and moved, the newcomer takes the mover's old post
+    tryPair((i,o) => ch.moves.some(([m,a,b]) => b === o.q && a === i.q));
+  }
+  tryPair((i,o) => lineGroup(posMeta(i.q, sb).line) === lineGroup(posMeta(o.q, sa).line));
   tryPair(() => true);
   outs.forEach((o,k) => { if (!usedO.has(k)) pairs.push({inP:null, outP:o.p, outQ:o.q}); });
   ins.forEach((i,k) => { if (!usedI.has(k)) pairs.push({inP:i.p, inQ:i.q, outP:null}); });
@@ -916,13 +1071,18 @@ function moveGroups(ch){
   ch.moves.forEach(([p, a, b], k) => { if (!used.has(k)) { used.add(k); out.push({p, a, b}); chainFrom(a); } });
   return out;
 }
-const lc = id => gName(id).toLowerCase();
-function moveText(g){
-  return g.swap ? `${g.p} et ${g.p2} échangent leur poste (${lc(g.a)} et ${lc(g.b)})` : `${g.p} : ${lc(g.a)} → ${lc(g.b)}`;
+const lc = (id, sys) => gName(id, sys).toLowerCase();
+function moveText(g, sys){
+  return g.swap ? `${g.p} et ${g.p2} échangent leur poste (${lc(g.a, sys)} et ${lc(g.b, sys)})` : `${g.p} : ${lc(g.a, sys)} → ${lc(g.b, sys)}`;
+}
+// Nouveau système : chaque joueur du terrain avec sa place, dans l'ordre du terrain.
+function sysLines(ch){
+  const on = segAt(S.plan, ch.t + 1e-4)?.on || {}, to = ch.sys.to;
+  return PRESETS[to].map(([id]) => [Object.keys(on).find(n => on[n] === id), id]).filter(([n]) => n);
 }
 // Petit terrain avec des flèches : d'où part et où va chaque joueur qui change de poste.
-function movePitch(groups, dot){
-  const xy = q => { const p = (PRESETS[S.preset] || []).find(([id]) => id === q); return p ? [1 + p[3]*0.6, 1 + p[4]*0.86] : null; };
+function movePitch(groups, dot, sys = curSys()){
+  const xy = q => { const p = (PRESETS[sys] || PRESETS[S.preset]).find(([id]) => id === q); return p ? [1 + p[3]*0.6, 1 + p[4]*0.86] : null; };
   const arrows = groups.map(g => {
     const A = xy(g.a), B = xy(g.b); if (!A || !B) return "";
     const dx = B[0]-A[0], dy = B[1]-A[1], L = Math.hypot(dx, dy) || 1, ux = dx/L, uy = dy/L, r = 6;
@@ -934,12 +1094,21 @@ function movePitch(groups, dot){
   return `<svg class="mini mv" viewBox="0 0 62 88" aria-hidden="true"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g>${arrows}${D ? `<circle class="in" cx="${D[0].toFixed(1)}" cy="${D[1].toFixed(1)}" r="6"/>` : ""}</svg>`;
 }
 // Petit terrain avec un point sur le poste concerné.
-function miniPitch(q){
-  const p = (PRESETS[S.preset] || []).find(([id]) => id === q);
+function miniPitch(q, sys = curSys()){
+  const p = (PRESETS[sys] || PRESETS[S.preset]).find(([id]) => id === q);
   if (!p) return "";
-  return `<svg class="mini" viewBox="0 0 62 88" role="img" aria-label="Poste : ${esc(gName(q))}"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g><circle cx="${(1 + p[3]*0.6).toFixed(1)}" cy="${(1 + p[4]*0.86).toFixed(1)}" r="6"/></svg>`;
+  return `<svg class="mini" viewBox="0 0 62 88" role="img" aria-label="Poste : ${esc(gName(q, sys))}"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g><circle cx="${(1 + p[3]*0.6).toFixed(1)}" cy="${(1 + p[4]*0.86).toFixed(1)}" r="6"/></svg>`;
 }
 function changeLines(ch){
+  const sb = sysAt(ch.t), sa = sysAt(ch.t - 1e-3);
+  if (ch.sys) {
+    // Changement de système : les remplacements prévus à ce moment, puis tout le monde à sa nouvelle place.
+    let html = pairChanges(ch).map(pr => `<div class="swap"><div class="s-names">
+        <div class="s-row s-in"><span class="mk in" aria-hidden="true">↑</span><span class="big"><span class="sr">Entre : </span>${esc(pr.inP || "—")}</span></div>
+        <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}${pr.outP && pr.outQ ? ` <span class="s-pos">(${esc(gName(pr.outQ, sa))})</span>` : ""}</span></div>
+      </div>${miniPitch(pr.inQ || pr.outQ, pr.inQ ? sb : sa)}${pr.inP ? `<div class="where">${pill(pr.inQ, sb)} ${esc(gName(pr.inQ, sb))}</div>` : ""}</div>`).join("");
+    return html + `<div class="reorg"><div class="reorg-x"><div class="reorg-t">🔀 Nouveau système : ${esc(ch.sys.to)}</div>${sysLines(ch).map(([n, q]) => `<div class="reorg-l"><div class="rl-d"><b>${esc(n)}</b> ${pill(q, sb)} ${esc(gName(q, sb))}</div></div>`).join("")}</div></div>`;
+  }
   // Les joueurs déjà sur le terrain qui bougent à cause d'un remplacement sont montrés avec ce remplacement :
   // le sortant libère un poste, un joueur du terrain y glisse, le remplaçant prend le poste laissé (chaîne).
   const usedM = new Set();
@@ -949,16 +1118,16 @@ function changeLines(ch){
   let html = pairChanges(ch).map(pr => { const mv = chainOf(pr); return `<div class="swap">
       <div class="s-names">
         <div class="s-row s-in"><span class="mk in" aria-hidden="true">↑</span><span class="big"><span class="sr">Entre : </span>${esc(pr.inP || "—")}</span></div>
-        <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}${pr.outP && pr.outQ ? ` <span class="s-pos">(${esc(gName(pr.outQ))})</span>` : ""}</span></div>
-        ${mv.map((g, i) => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span><b>${esc(i + 1 < mv.length ? mv[i + 1].p : pr.inP)}</b> prend la place de <b>${esc(g.p)}</b> (${esc(lc(g.a))}), ${esc(g.p)} passe ${esc(lc(g.b))}</span></span></div>`).join("")}
+        <div class="s-row s-out"><span class="mk out" aria-hidden="true">↓</span><span class="big"><span class="sr">Sort : </span>${esc(pr.outP || "—")}${pr.outP && pr.outQ ? ` <span class="s-pos">(${esc(gName(pr.outQ, sb))})</span>` : ""}</span></div>
+        ${mv.map((g, i) => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span><b>${esc(i + 1 < mv.length ? mv[i + 1].p : pr.inP)}</b> prend la place de <b>${esc(g.p)}</b> (${esc(lc(g.a, sb))}), ${esc(g.p)} passe ${esc(lc(g.b, sb))}</span></span></div>`).join("")}
       </div>
-      ${mv.length ? movePitch(mv, pr.inQ) : miniPitch(pr.inQ || pr.outQ)}
-      ${pr.inP && !mv.length ? `<div class="where">${pill(pr.inQ)} ${esc(gName(pr.inQ))}</div>` : ""}
+      ${mv.length ? movePitch(mv, pr.inQ, sb) : miniPitch(pr.inQ || pr.outQ, sb)}
+      ${pr.inP && !mv.length ? `<div class="where">${pill(pr.inQ, sb)} ${esc(gName(pr.inQ, sb))}</div>` : ""}
     </div>`; }).join("");
   const mg = moveGroups({...ch, moves: ch.moves.filter((m, i) => !usedM.has(i))});
   if (mg.length) html += `<div class="reorg"><div class="reorg-x"><div class="reorg-t">Changements de poste</div>${mg.map(g => g.swap
-      ? `<div class="reorg-l"><div class="rl-h">⇄ <b>${esc(g.p)}</b> et <b>${esc(g.p2)}</b> échangent</div><div class="rl-d"><b>${esc(g.p)}</b> ${pill(g.a)} → ${pill(g.b)}</div><div class="rl-d"><b>${esc(g.p2)}</b> ${pill(g.b)} → ${pill(g.a)}</div></div>`
-      : `<div class="reorg-l"><div class="rl-h"><b>${esc(g.p)}</b></div><div class="rl-d">${pill(g.a)} → ${pill(g.b)} ${esc(gName(g.b))}</div></div>`).join("")}</div>${movePitch(mg)}</div>`;
+      ? `<div class="reorg-l"><div class="rl-h">⇄ <b>${esc(g.p)}</b> et <b>${esc(g.p2)}</b> échangent</div><div class="rl-d"><b>${esc(g.p)}</b> ${pill(g.a, sb)} → ${pill(g.b, sb)}</div><div class="rl-d"><b>${esc(g.p2)}</b> ${pill(g.b, sb)} → ${pill(g.a, sb)}</div></div>`
+      : `<div class="reorg-l"><div class="rl-h"><b>${esc(g.p)}</b></div><div class="rl-d">${pill(g.a, sb)} → ${pill(g.b, sb)} ${esc(gName(g.b, sb))}</div></div>`).join("")}</div>${movePitch(mg, null, sb)}</div>`;
   return html;
 }
 function matchView(){
@@ -988,9 +1157,9 @@ function matchView(){
   }
   const seg = segAt(plan, Math.min(t, plan.segs[plan.segs.length-1].b - 0.01));
   const upcomingIds = next ? new Set(next.outs.map(o=>o[0]).concat(next.moves.map(m=>m[0]))) : new Set();
-  const goesTo = next ? Object.fromEntries(next.moves.map(([p,, b]) => [p, b])) : {};
+  const goesTo = next && !next.sys ? Object.fromEntries(next.moves.map(([p,, b]) => [p, b])) : {};
   const onIds = Object.entries(seg.on);
-  const pitch = `<div class="pitch" aria-label="Joueurs sur le terrain">${pitchLines()}${PRESETS[S.preset].map(([id,label,line,x,y]) => {
+  const pitch = `<div class="pitch" aria-label="Joueurs sur le terrain">${pitchLines()}${PRESETS[curSys()].map(([id,label,line,x,y]) => {
       const who = onIds.find(([p,q]) => q === id)?.[0] || "Vide";
       const rl = (S.squad.find(p => p.name === who)?.roles || []).join("");
       return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(gShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}${goesTo[who] ? ` → ${esc(posShort(goesTo[who]))}` : ""}</span></div>`;}).join("")}</div>`;
@@ -1000,7 +1169,7 @@ function matchView(){
   const upList = qChanges.map(c => {
     const isBrk = Math.abs(c.t/ql - Math.round(c.t/ql)) < 1e-6;
     const lab = isBrk ? "Pause" : fmtQ(c.t).label;
-    return `<div class="up-item${(C.done.includes(c.t) || c.t < t - 0.4) ? " done":""}"><div class="up-t">${lab}</div><div class="up-l">${pairChanges(c).map(pr=>`<div><span class="i">${esc(pr.inP||"—")}</span> remplace <span class="o">${esc(pr.outP||"—")}${pr.outP && pr.outQ ? ` <small class="op">(${esc(gName(pr.outQ))})</small>` : ""}</span> ${pr.inQ?pill(pr.inQ):""}</div>`).join("")}${moveGroups(c).map(g=>`<div class="m">${g.swap ? "⇄" : "→"} ${esc(moveText(g))}</div>`).join("")}</div></div>`;}).join("") || `<p class="muted">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
+    return `<div class="up-item${(C.done.includes(c.t) || c.t < t - 0.4) ? " done":""}"><div class="up-t">${lab}</div><div class="up-l">${(([sa, sb]) => pairChanges(c).map(pr=>`<div><span class="i">${esc(pr.inP||"—")}</span> remplace <span class="o">${esc(pr.outP||"—")}${pr.outP && pr.outQ ? ` <small class="op">(${esc(gName(pr.outQ, c.sys ? sa : sb))})</small>` : ""}</span> ${pr.inQ?pill(pr.inQ, sb):""}</div>`).join("") + (c.sys ? `<div class="m">🔀 Passage en ${esc(c.sys.to)} : ${esc(sysLines(c).map(([n, q]) => `${n} ${gShort(q, sb)}`).join(", "))}</div>` : moveGroups(c).map(g=>`<div class="m">${g.swap ? "⇄" : "→"} ${esc(moveText(g, sb))}</div>`).join("")))([sysAt(c.t - 1e-3), sysAt(c.t)])}</div></div>`;}).join("") || `<p class="muted">Aucun changement dans ${halves() ? "cette mi-temps" : "ce quart"}.</p>`;
   const banners = activeBanners(t);
   const startBtn = C.running ? `<button class="btn big" id="pause">❚❚ Pause</button>` : (atEnd ? (C.q < S.rules.quarters ? `<button class="btn big primary" id="nextQ">Lancer ${pThe(C.q+1)} ▸</button>` : `<span class="alert-title">Fin du match</span>`) : `<button class="btn big go" id="start">▶ ${el>0?"Reprendre":"Démarrer "+pThe(C.q)}</button>`);
   if (far) return `<div class="far">
@@ -1030,6 +1199,7 @@ function matchView(){
           <div class="tools-grid">
             <button class="btn" id="farOn">⤢ Vue de loin</button>
             ${ADJ ? "" : `<button class="btn" id="mList">📋 Mes matchs</button>`}
+            ${ADJ || plan.manual || matchOver ? "" : `<button class="btn" id="sysOpen">🔀 Changer de système</button>`}
             ${liveButton()}
           </div>
           <div class="muted tools-t">Régler le chrono</div>
@@ -1088,6 +1258,16 @@ function bindMatch(){
   document.querySelectorAll("[data-swo]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.swo; if (inc.inv || inc.inP === inc.player) { inc.inP = null; inc.inv = false; } render(); }));
   document.querySelectorAll("[data-swi]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swi; inc.inv = false; render(); }));
   document.querySelectorAll("[data-swf]").forEach(b => b.addEventListener("click", () => { inc.inP = b.dataset.swf; inc.inv = true; render(); }));
+  $("#sysOpen")?.addEventListener("click", () => { toolsOpen = false; inc = {type:"systeme", to:null, when:"now"}; incMsg = ""; render(); setTimeout(() => $(".incp")?.scrollIntoView({block:"start"}), 50); });
+  document.querySelectorAll("[data-systo]").forEach(b => b.addEventListener("click", () => { inc.to = b.dataset.systo; incMsg = ""; render(); }));
+  document.querySelectorAll("[data-syswhen]").forEach(b => b.addEventListener("click", () => { inc.when = b.dataset.syswhen; incMsg = ""; render(); }));
+  // Une seule place par joueur : celui qui avait déjà été mis ailleurs prend la place libérée.
+  document.querySelectorAll("[data-sysq]").forEach(el => el.addEventListener("change", () => {
+    const q = el.dataset.sysq, n = el.value, old = inc.asg[q];
+    const was = Object.keys(inc.asg).find(k => k !== q && inc.asg[k] === n && n);
+    if (was) inc.asg[was] = old || "";
+    inc.asg[q] = n; incMsg = ""; render();
+  }));
   bindSheet();
   document.querySelectorAll("[data-inct]").forEach(b => b.addEventListener("click", () => { inc.type = b.dataset.inct; inc.inP = undefined; render(); }));
   document.querySelectorAll("[data-incp]").forEach(b => b.addEventListener("click", () => { inc.player = b.dataset.incp; inc.inP = undefined; render(); }));
@@ -1100,6 +1280,7 @@ function bindMatch(){
   }));
   $("#healCancel")?.addEventListener("click", () => { healAsk = null; render(); });
   $("#incBack")?.addEventListener("click", () => { inc.pending = null; render(); });
+  $("#sysRecalc")?.addEventListener("click", () => { const ev = inc.pending.ev; incBusy = true; render(); setTimeout(() => sysRecalc(ev), 40); });
   document.querySelectorAll("[data-catch-card]").forEach(b => b.addEventListener("click", () => { inc.catchUp = b.dataset.catchCard === "1"; render(); }));
   $("#incGo")?.addEventListener("click", () => { if (ADJ) { adjAsk("incident", {inc:adjInc(), force:!!inc.pending}); return; } incBusy = true; render(); setTimeout(doIncident, 40); });
 }
@@ -1320,13 +1501,16 @@ function coachView(){
   const tabs = `<div class="seg seg-full seg-top" role="tablist">${[["match","Match"],["squad","Effectif"],["season","Saison"]].map(([k,l]) => `<button role="tab" data-ctab="${k}" aria-selected="${coachTab===k}" aria-pressed="${coachTab===k}">${l}</button>`).join("")}</div>`;
   return teamBar() + tabs + (coachTab === "squad" ? squadTab() : coachTab === "season" ? seasonTab() : matchPrepTab());
 }
+// Système dont l'effectif montre les places (celui de l'équipe, ou un autre pour un changement de système en match).
+let squadSys = null;
+const squadPS = () => squadSys && PRESETS[squadSys] && squadSys !== teamSys() ? squadSys : teamSys();
 function squadTab(){
-  const sys = teamSys(), others = Object.keys(PRESETS).filter(k => k !== sys);
-  const rows = S.squad.map((p,i) => `<tr>
+  const sys = teamSys(), others = Object.keys(PRESETS).filter(k => k !== sys), ps = squadPS();
+  const rows = S.squad.map((p,i) => { const L = playerPos(p, ps); return `<tr>
     <td><input class="name" type="text" data-i="${i}" data-k="name" value="${esc(p.name)}" aria-label="Nom"></td>
-    <td><div class="posed">${placeUnits(p.pos, sys).map(([ids, nm, sh], k) => `<button class="pchip ${posMeta(ids[0], sys).line}" data-rmpos="${i}" data-q="${esc(ids[0])}" title="Retirer ${esc(nm)}">${k+1}. ${esc(sh)} ✕</button>`).join("")}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${placeUnits(PRESETS[sys].map(x => x[0]), sys).filter(([ids]) => !ids.some(q => p.pos.includes(q))).map(([ids, nm]) => `<option value="${ids[0]}">${esc(nm)}</option>`).join("")}</select></div></td>
+    <td><div class="posed">${placeUnits(L, ps).map(([ids, nm, sh], k) => `<button class="pchip ${posMeta(ids[0], ps).line}" data-rmpos="${i}" data-q="${esc(ids[0])}" title="Retirer ${esc(nm)}">${k+1}. ${esc(sh)} ✕</button>`).join("")}${ps !== sys && !L.some(q => q !== "G") ? `<small class="muted">aucune place</small>` : ""}<select data-addpos="${i}" aria-label="Ajouter un poste à ${esc(p.name)}"><option value="">+ poste</option>${placeUnits(PRESETS[ps].map(x => x[0]), ps).filter(([ids]) => !ids.some(q => L.includes(q))).map(([ids, nm]) => `<option value="${ids[0]}">${esc(nm)}</option>`).join("")}</select></div></td>
     <td><div class="roles">${["D","B"].map(r => `<button class="role${(p.roles||[]).includes(r)?" on":""}" data-role="${r}" data-ri="${i}" title="${({D:"Donneur",B:"Bloqueur"})[r]}" aria-pressed="${(p.roles||[]).includes(r)}">${r}</button>`).join("")}</div></td>
-    <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`).join("");
+    <td><button class="x" data-del="${i}" aria-label="Supprimer ${esc(p.name)}">✕</button></td></tr>`; }).join("");
   return `${!S.squad.length ? `<div class="card"><h2>Bienvenue</h2><p class="muted" style="margin:0">Ajoute tes joueurs ici, avec leurs postes. Tu as déjà une sauvegarde ? Charge-la dans la page Réglages.</p></div>` : ""}
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes joueurs (${S.squad.length})</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <div class="set" style="border-top:0;padding-top:4px"><div><b>Système de jeu</b><div class="muted">Les postes de tes joueurs suivent ce système.</div></div>
@@ -1336,9 +1520,12 @@ function squadTab(){
       <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px"><button class="btn primary" id="sysKeep">Garder les places adaptées</button><button class="btn" id="sysClear">Tout effacer et recommencer</button><button class="btn" id="sysCancel">Annuler</button></div>
       <div class="muted" style="margin-top:6px;font-size:.85rem">Garder : chaque poste passe à la place la plus proche du ${esc(sysAsk)}. Vérifie ensuite chaque joueur. Effacer : seuls les gardiens restent.</div></div>` : ""}
     ${posNote ? `<div class="warn" style="margin-bottom:10px">${esc(posNote)}</div>` : ""}
+    <div class="set"><div><b>Places en</b><div class="muted">Pour jouer un match dans un autre système (Coach › Match) ou en changer pendant un match, donne aussi à tes joueurs leurs places dans ces systèmes.</div></div>
+      <div class="seg sys-tabs" role="group">${Object.keys(PRESETS).map(k => `<button data-psys="${k}" aria-pressed="${k === ps}">${k}${k === sys ? " ★" : ""}</button>`).join("")}</div></div>
+    ${ps !== sys ? `<p class="muted" style="margin:6px 0 0;font-size:.9rem"><b>Places en ${esc(ps)}</b>, utilisées quand tu choisis le ${esc(ps)} pour un match ou quand tu passes en ${esc(ps)} pendant un match. Elles sont indépendantes des places en ${esc(sys)} et des autres systèmes. Un joueur sans place dans ce système pourra jouer partout.</p>` : ""}
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste). Touche un poste pour le retirer, reste appuyé dessus puis glisse-le pour changer l'ordre. Corners : D donneur, B bloqueur.</p>
     ${squadMsg ? `<div class="warn" style="margin-bottom:10px">${esc(squadMsg)}</div>` : ""}
-    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes (${esc(sys)})</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes (${esc(ps)})</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
   </div>`;
 }
@@ -1682,9 +1869,9 @@ function matchPrepTab(){
   const T = computeTargets();
   const pres = present(), ids = PRESETS[S.preset].map(p => p[0]);
   const filled = ids.filter(id => S.lineup[id] && pres.some(p => p.name === S.lineup[id])).length;
-  const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>p.pos.includes(id)).concat(pres.filter(p=>!p.pos.includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
+  const lineupSel = PRESETS[S.preset].map(([id,label,line,x,y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><select data-lu="${id}" aria-label="${esc(label)}"><option value="">—</option>${pres.filter(p=>mPos(p).includes(id)).concat(pres.filter(p=>!mPos(p).includes(id))).map(p=>`<option ${S.lineup[id]===p.name?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>`).join("");
   const presList = S.squad.map((p,i) => `<label class="chk${p.present ? " on" : ""}"><input type="checkbox" data-i="${i}" data-k="present" ${p.present?"checked":""}> ${esc(p.name)}</label>`).join("");
-  const minList = pres.map(p => { const i = S.squad.indexOf(p); return `<label class="minrow"><span>${p.pos.length && !p.pos.some(q => q !== "G") ? `<b class="gk-tag">GK</b>` : ""}${esc(p.name)}</span><input type="number" step="0.5" min="0" data-i="${i}" data-k="minutes" value="${p.minutes||""}" placeholder="${T[p.name]!==undefined ? R.fmtMin(T[p.name]).replace("'",",").replace(/,$/,"") : ""}" aria-label="Minutes fixées pour ${esc(p.name)}"></label>`; }).join("");
+  const minList = pres.map(p => { const i = S.squad.indexOf(p); return `<label class="minrow"><span>${mPos(p).length && !mPos(p).some(q => q !== "G") ? `<b class="gk-tag">GK</b>` : ""}${esc(p.name)}</span><input type="number" step="0.5" min="0" data-i="${i}" data-k="minutes" value="${p.minutes||""}" placeholder="${T[p.name]!==undefined ? R.fmtMin(T[p.name]).replace("'",",").replace(/,$/,"") : ""}" aria-label="Minutes fixées pour ${esc(p.name)}"></label>`; }).join("");
   const anyMin = S.squad.some(p => p.minutes);
   return `<div class="prep-h"><div style="min-width:0"><div class="prep-t">${esc(S.matchLabel || "Match sans nom")}</div><div class="muted">${esc(fmtDate(S.matchDate))} · ${esc(matchStatus(curMatchRec()))}</div></div><button class="btn small" id="cList">Mes matchs (${S.matches.length})</button></div>
   <div class="card steps-card">
@@ -1693,12 +1880,14 @@ function matchPrepTab(){
     ${step("pres", 2, pres.length >= ids.length, "Présents", `${pres.length} joueurs sur ${S.squad.length}`,
       `<div class="chks">${presList}</div>`)}
     ${step("compo", 3, filled === ids.length, "Compo de départ", `${S.preset} · ${filled} postes sur ${ids.length}`,
-      `<div class="row" style="margin-bottom:12px"><span class="muted">Système : <b>${esc(S.preset)}</b>${S.preset === teamSys() ? " (à changer dans « Effectif »)" : ` (celui de ce match ; ton équipe joue maintenant en ${esc(teamSys())})`}</span></div>
+      `${S.plan?.savedAt || matchStarted() ? `<div class="row" style="margin-bottom:12px"><span class="muted">Système : <b>${esc(S.preset)}</b> (celui de ce match)</span></div>` : `<div class="muted" style="margin-bottom:6px;font-size:.9rem">Système pour ce match (★ = celui de ton équipe). Les places viennent de « Places en » dans Effectif.</div>
+      <div class="seg sys-tabs" role="group" style="margin-bottom:12px">${Object.keys(PRESETS).map(k => `<button data-msys="${k}" aria-pressed="${S.preset === k}">${k}${k === teamSys() ? " ★" : ""}</button>`).join("")}</div>
+      ${S.preset !== teamSys() && (n => n.length ? `<div class="warn" style="margin-bottom:10px">Sans place en ${esc(S.preset)} : ${esc(n.join(", "))}. Ils peuvent jouer partout. Donne-leur leurs places dans Effectif › « Places en ${esc(S.preset)} ».</div>` : "")(pres.filter(p => (p.pos || []).some(q => q !== "G") && !playerPos(p, S.preset).some(q => q !== "G")).map(p => p.name)) || ""}`}
       <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>`)}
     ${step("time", 4, !budgetBlock(), "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin && timeMode() !== "manual" ? " · minutes fixées" : ""),
       `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
       <p class="muted" style="margin:8px 0 12px;font-size:.9rem">${TIME_HELP[timeMode()]}${timeMode() === "manual" || timeMode() === "notes" ? "" : " Laisse une case vide pour le calcul automatique (en gris)."}</p>
-      ${timeMode() === "manual" || timeMode() === "notes" ? "" : (() => { const field = pres.filter(p => p.pos.some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
+      ${timeMode() === "manual" || timeMode() === "notes" ? "" : (() => { const field = pres.filter(p => mPos(p).some(q => q !== "G")), fixed = field.filter(p => +p.minutes > 0); return fixed.length ? `<div class="warn" style="margin-bottom:10px">${fixed.length === field.length ? "Tous tes joueurs de champ ont" : fixed.length + " joueur" + (fixed.length > 1 ? "s ont" : " a")} des minutes fixées (${esc(fixed.map(p => p.name).join(", "))}) : ${fixed.length > 1 ? "ils gardent" : "il garde"} ces minutes quel que soit le choix. <button class="btn small" id="clearMin2">Effacer les minutes fixées</button></div>` : ""; })()}
       ${timeMode() === "manual" ? "" : `<div id="budget">${budgetLine()}</div><div class="mins">${minList}</div>`}`)}
     ${step("rules", 5, true, "Règles de rotation", `${S.rules.quarters} ${pWord()}${halves() ? "" : "s"} de ${R.fmtMin(+S.rules.qlen)}` + (() => { const n = Array.from({length:S.rules.quarters}, (_, q) => perDiff(q).length ? 1 : 0).reduce((a, b) => a + b, 0); return n ? ` · ${n} ${halves() ? "mi-temps" : "quart" + (n > 1 ? "s" : "")} ${n > 1 ? "différent" + (halves() ? "es" : "s") : "différent" + (halves() ? "e" : "")}` : ""; })(),
       rulesBody())}
@@ -1728,7 +1917,7 @@ function previewHtml(){
   const names = Object.keys(plan.played).sort((a,b)=>plan.played[b]-plan.played[a]);
   const END = S.rules.quarters*S.rules.qlen;
   const rec = names.map(n => { const d = plan.played[n]-plan.targets[n]; return `<tr><td>${esc(n)}</td><td>${R.fmtMin(plan.played[n])}</td><td class="muted">${R.fmtMin(plan.targets[n])}</td><td class="dev" style="color:${Math.abs(d)<=1.5?"var(--in)":"var(--out)"}">${d>=0?"+":"−"}${R.fmtMin(Math.abs(d))}</td></tr>`; }).join("");
-  const tl = names.map(n => `<div class="tlr"><div>${esc(n)}</div><div class="trk">${plan.segs.map(s => s.on[n] ? `<i style="left:${s.a/END*100}%;width:${(s.b-s.a)/END*100}%;background:var(--${posMeta(s.on[n]).line})">${(s.b-s.a)>=2.5?esc(gShort(s.on[n])):""}</i>` : "").join("")}${Array.from({length:S.rules.quarters-1}, (_,k) => `<span class="q" style="left:${(k+1)/S.rules.quarters*100}%"></span>`).join("")}</div></div>`).join("");
+  const tl = names.map(n => `<div class="tlr"><div>${esc(n)}</div><div class="trk">${plan.segs.map(s => s.on[n] ? `<i style="left:${s.a/END*100}%;width:${(s.b-s.a)/END*100}%;background:var(--${posMeta(s.on[n], sysAt(s.a)).line})">${(s.b-s.a)>=2.5?esc(gShort(s.on[n], sysAt(s.a))):""}</i>` : "").join("")}${Array.from({length:S.rules.quarters-1}, (_,k) => `<span class="q" style="left:${(k+1)/S.rules.quarters*100}%"></span>`).join("")}</div></div>`).join("");
   return `${tag}${modeTag}${warn}<div class="grid2" style="margin-top:12px"><div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Prévu</th><th>Visé</th><th>Écart</th></tr></thead><tbody>${rec}</tbody></table></div><div class="tl"><div class="tl-in">${tl}</div></div></div>`;
 }
 // Remplace un nom de joueur partout dans un objet (valeurs et clés), sans toucher aux textes.
@@ -1771,19 +1960,23 @@ function bindCoach(){
     preview = null; persist(); render();
   }));
   v.querySelectorAll("[data-del]").forEach(el => el.addEventListener("click", () => { if (el.dataset.armed) { S.squad.splice(+el.dataset.del,1); preview=null; persist(); render(); } else { el.dataset.armed=1; el.textContent="Sûr ?"; } }));
-  v.querySelectorAll("[data-rmpos]").forEach(b => { dragPlace(b); b.addEventListener("click", () => { if (Date.now() - placeDragEnd < 400) return; const p = S.squad[+b.dataset.rmpos]; const g = placeGroup(b.dataset.q, teamSys()), rm = g ? g[0] : [b.dataset.q]; p.pos = p.pos.filter(q => !rm.includes(q)); preview = null; persist(); render(); }); });
-  v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = expandPos([...p.pos, sel.value], teamSys()); preview = null; persist(); render(); }));
+  v.querySelectorAll("[data-rmpos]").forEach(b => { dragPlace(b); b.addEventListener("click", () => { if (Date.now() - placeDragEnd < 400) return; const p = S.squad[+b.dataset.rmpos], sys = squadPS(); const g = placeGroup(b.dataset.q, sys), rm = g ? g[0] : [b.dataset.q]; setPlayerPos(p, sys, playerPos(p, sys).filter(q => !rm.includes(q))); preview = null; persist(); render(); }); });
+  v.querySelectorAll("[data-psys]").forEach(b => b.addEventListener("click", () => { squadSys = b.dataset.psys; render(); }));
+  v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos], sys = squadPS(); setPlayerPos(p, sys, expandPos([...playerPos(p, sys), sel.value], sys)); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
   $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],present:true,minutes:0}); persist(); render(); });
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
   $("#teamSys")?.addEventListener("change", e => { const to = e.target.value; posNote = "";
-    if (S.squad.some(p => p.pos.some(q => q !== "G"))) { sysAsk = to; render(); } else { setSystem(to, false); posNote = ""; persist(); render(); } });
+    // Places déjà préparées pour ce système (« Places en ») : on les reprend telles quelles, sans question.
+    if (S.squad.some(p => p.posBy?.[to]?.some(q => q !== "G"))) { setSystem(to, true); posNote = ""; persist(); render(); }
+    else if (S.squad.some(p => p.pos.some(q => q !== "G"))) { sysAsk = to; render(); } else { setSystem(to, false); posNote = ""; persist(); render(); } });
   $("#sysKeep")?.addEventListener("click", () => { setSystem(sysAsk, true); sysAsk = null; persist(); render(); });
   $("#sysClear")?.addEventListener("click", () => { setSystem(sysAsk, false); sysAsk = null; persist(); render(); });
   $("#sysCancel")?.addEventListener("click", () => { sysAsk = null; render(); });
   v.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => { coachTab = b.dataset.ctab; sysAsk = null; posNote = ""; render(); }));
   v.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => { coachStep = coachStep === b.dataset.step ? null : b.dataset.step; rulesResetArmed = false; render(); }));
   bindRules(v);
+  v.querySelectorAll("[data-msys]").forEach(b => b.addEventListener("click", () => { const k = b.dataset.msys; if (k === S.preset || matchStarted() || S.plan?.savedAt) return; S.preset = k; S.ownSys = k !== teamSys(); S.lineup = {}; S.plan = S.prevPlan = S.basePlan = null; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-lu]").forEach(el => el.addEventListener("change", () => { const id = el.dataset.lu; for (const k in S.lineup) if (S.lineup[k] === el.value && k !== id) delete S.lineup[k]; if (el.value) S.lineup[id] = el.value; else delete S.lineup[id]; preview=null; persist(); render(); }));
   $("#pdfB")?.addEventListener("click", makePdf);
   $("#matchLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value; persist(); render(); });
