@@ -4,7 +4,8 @@ const PRESETS = {
   "3-2-3-2": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",34,63,"MDG"],["5","Milieu déf. droit","dm",66,63,"MDD"],["6","Milieu gauche","mid",17,44,"MG"],["7","Milieu off.","mid",50,46,"MO"],["8","Milieu droit","mid",83,44,"MD"],["9","Avant gauche","att",34,20,"AG"],["10","Avant droit","att",66,20,"AD"]],
   "4-3-3": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu déf.","dm",50,60,"MDF"],["6","Milieu gauche","mid",26,46,"MG"],["7","Milieu droit","mid",74,46,"MD"],["8","Avant gauche","att",18,22,"AG"],["9","Avant centre","att",50,16,"AC"],["10","Avant droit","att",82,22,"AD"]],
   "4-4-2": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu gauche","mid",14,48,"MG"],["6","Milieu axial gauche","dm",38,54,"MAG"],["7","Milieu axial droit","dm",62,54,"MAD"],["8","Milieu droit","mid",86,48,"MD"],["9","Avant gauche","att",36,20,"AG"],["10","Avant droit","att",64,20,"AD"]],
-  "3-3-3-1": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",22,62,"MDG"],["5","Milieu déf. axe","dm",50,64,"MDA"],["6","Milieu déf. droit","dm",78,62,"MDD"],["7","Milieu off. gauche","mid",22,40,"MOG"],["8","Milieu off. axe","mid",50,42,"MOA"],["9","Milieu off. droit","mid",78,40,"MOD"],["10","Avant centre","att",50,17,"AC"]]
+  "3-3-3-1": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",20,76,"BG"],["2","Back central","def",50,80,"BC"],["3","Back droit","def",80,76,"BD"],["4","Milieu déf. gauche","dm",22,62,"MDG"],["5","Milieu déf. axe","dm",50,64,"MDA"],["6","Milieu déf. droit","dm",78,62,"MDD"],["7","Milieu off. gauche","mid",22,40,"MOG"],["8","Milieu off. axe","mid",50,42,"MOA"],["9","Milieu off. droit","mid",78,40,"MOD"],["10","Avant centre","att",50,17,"AC"]],
+  "4-2-3-1": [["G","Gardien","gk",50,95,"G"],["1","Back gauche","def",14,74,"BG"],["2","Back central gauche","def",38,80,"BCG"],["3","Back central droit","def",62,80,"BCD"],["4","Back droit","def",86,74,"BD"],["5","Milieu déf. gauche","dm",36,61,"MDG"],["6","Milieu déf. droit","dm",64,61,"MDD"],["7","Milieu gauche","mid",17,42,"MG"],["8","Milieu off.","mid",50,40,"MO"],["9","Milieu droit","mid",83,42,"MD"],["10","Avant centre","att",50,17,"AC"]]
 };
 const DEFAULT_RULES = {quarters:4,qlen:17.5,firstChange:4,per:{},startBlock:4,endBlock:3,minStint:6,maxStint:22,maxBench:10,minBench:3,maxEntries:3,breakChanges:true,gkOnlyAtBreaks:true,minPlay:35,alertSec:30,minDef:10,minMid:8,minAtt:6,maxDef:22,maxMid:22,maxAtt:22};
 // Règles copiées à neuf (per est un objet : jamais partagé avec DEFAULT_RULES).
@@ -16,7 +17,7 @@ const pThe = q => halves() ? `la ${q === 1 ? "1re" : q + "e"} mi-temps` : `le Q$
 const pWord = () => halves() ? "mi-temps" : "quart";
 
 let S = {squad:[],preset:"3-2-3-2",lineup:{},rules:defaultRules(),plan:null,pin:""};
-let mode = "home", coachOK = false, preview = null, seedN = 1;
+let mode = "home", coachOK = false, preview = null, seedN = 1, posNote = "";
 const SID = Math.random().toString(36).slice(2);
 let inc = null, incBusy = false, incMsg = "", healAsk = null; // healAsk : joueur dont on confirme la fin de blessure
 // Réglages de l'app, propres à cet appareil (pas dans la sauvegarde).
@@ -64,6 +65,38 @@ let C = loadClock();
 
 const $ = (s, el=document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Postes par système : p.pos = les postes du joueur dans le système affiché (p.posSys).
+// Ceux des autres systèmes restent dans p.posBy. Un système jamais vu est pré-rempli avec la place la plus proche.
+function nearPos(q, from, to){ // places les plus proches (plusieurs si égalité, ex. back central -> les deux backs centraux)
+  const a = (PRESETS[from] || []).find(x => x[0] === q); if (!a || !PRESETS[to]) return [];
+  if (a[2] === "gk") return [PRESETS[to][0][0]];
+  const field = PRESETS[to].filter(x => x[2] !== "gk"), same = field.filter(x => lineGroup(x[2]) === lineGroup(a[2])), pool = same.length ? same : field;
+  const d = x => Math.hypot(x[3] - a[3], x[4] - a[4]), m = Math.min(...pool.map(d));
+  return pool.filter(x => d(x) <= m + 3).map(x => x[0]);
+}
+function syncPos(to, from0){ // renvoie le nombre de joueurs dont les postes ont été pré-remplis
+  let n = 0;
+  S.squad.forEach(p => {
+    const from = p.posSys || from0 || to;
+    if (from !== to) {
+      p.posBy = {...(p.posBy || {}), [from]: [...(p.pos || [])]};
+      if (p.posBy[to]) p.pos = [...p.posBy[to]];
+      else {
+        // on part du système où le joueur a le plus de postes (le plus complet)
+        const src = Object.keys(p.posBy).filter(k => PRESETS[k]).sort((x, y) => p.posBy[y].length - p.posBy[x].length || (y === from) - (x === from))[0];
+        p.pos = [...new Set(p.posBy[src].flatMap(q => nearPos(q, src, to)))];
+        if (p.pos.length) n++;
+      }
+    }
+    p.posSys = to;
+  });
+  return n;
+}
+function setPreset(to){
+  const from = S.preset; if (!PRESETS[to] || to === from) return;
+  const n = syncPos(to, from); S.preset = to;
+  posNote = n ? `Premier passage en ${to} : les postes de ${n} joueur${n > 1 ? "s ont" : " a"} été pré-remplis avec la place la plus proche. Vérifie-les dans « Joueurs ». En ${from}, chacun garde ses postes.` : "";
+}
 const posMeta = id => { const p = PRESETS[S.preset].find(x => x[0] === id); return p ? {id:p[0],label:p[1],line:p[2],x:p[3],y:p[4],short:p[5]||p[0]} : {id,label:id,line:"mid",x:50,y:50,short:id}; };
 const posName = id => posMeta(id).label;
 const posShort = id => posMeta(id).short;
@@ -272,6 +305,7 @@ function openTeam(id){
   else if (S.matches.length) openMatch(sortedMatches()[0].id, false);
   else {
     // Équipe sans match : un match vide, prêt à préparer.
+    syncPos(S.preset); posNote = "";
     S.curMatch = null; S.matchLabel = ""; S.matchDate = ""; S.lineup = {}; S.plan = S.prevPlan = S.basePlan = null; S.sheet = {us:[], them:[], pc:0, log:[]};
     C = freshClock(); ensureMatches(); persist(); pushClock();
   }
@@ -308,7 +342,7 @@ function openMatch(id, store = true){
   const r = S.matches.find(m => m.id === id); if (!r) return;
   S.curMatch = id;
   S.matchLabel = r.matchLabel || ""; S.matchDate = r.matchDate || "";
-  S.preset = r.preset || S.preset; S.timeMode = r.timeMode || "notes"; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null; S.manual = r.manual || [];
+  const to = PRESETS[r.preset] ? r.preset : S.preset; syncPos(to, store ? S.preset : to); S.preset = to; posNote = ""; S.timeMode = r.timeMode || "notes"; S.lineup = r.lineup || {}; S.plan = r.plan || null; S.prevPlan = r.prevPlan || null; S.basePlan = r.basePlan || null; S.manual = r.manual || [];
   S.sheet = r.sheet || {us:[], them:[], pc:0, log:[]};
   if (Array.isArray(r.present)) S.squad.forEach(p => p.present = r.present.includes(p.name));
   C = r.clock || freshClock(); C.running = false;
@@ -1160,7 +1194,7 @@ function squadTab(){
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Mes joueurs (${S.squad.length})</h2><span class="save" id="saveState">${esc(saveState)}</span></div>
     <p class="muted" style="margin:6px 0 12px;font-size:.9rem">Postes dans l'ordre de préférence (le 1. est son meilleur poste ; touche un poste pour le retirer). Corners : D donneur, B bloqueur.</p>
     ${squadMsg ? `<div class="warn" style="margin-bottom:10px">${esc(squadMsg)}</div>` : ""}
-    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Postes (${esc(S.preset)})</th><th title="Rôles sur corner">Corners</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:10px"><button class="btn" id="addP">+ Ajouter un joueur</button></div>
   </div>`;
 }
@@ -1488,6 +1522,7 @@ function matchPrepTab(){
       `<div class="chks">${presList}</div>`)}
     ${step("compo", 3, filled === ids.length, "Compo de départ", `${S.preset} · ${filled} postes sur ${ids.length}`,
       `<div class="row" style="margin-bottom:12px"><label for="preset" class="muted">Système</label><select id="preset" style="border:1px solid var(--rule);border-radius:8px;padding:6px 10px;background:var(--bg)">${Object.keys(PRESETS).map(k=>`<option ${k===S.preset?"selected":""}>${k}</option>`).join("")}</select></div>
+      ${posNote ? `<div class="warn" style="margin-bottom:12px">${esc(posNote)}</div>` : ""}
       <div class="pitch" style="max-width:440px;margin:0 auto">${pitchLines()}${lineupSel}</div>`)}
     ${step("time", 4, true, "Temps de jeu", TIME_MODES.find(([v]) => v === timeMode())[1] + (anyMin && timeMode() !== "manual" ? " · minutes fixées" : ""),
       `<div class="seg" role="group">${TIME_MODES.map(([v,l]) => `<button data-tmode="${v}" aria-pressed="${timeMode()===v}">${esc(l)}</button>`).join("")}</div>
@@ -1567,11 +1602,11 @@ function bindCoach(){
   v.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.rmpos]; p.pos = p.pos.filter(q => q !== b.dataset.q); preview = null; persist(); render(); }));
   v.querySelectorAll("[data-addpos]").forEach(sel => sel.addEventListener("change", () => { if (!sel.value) return; const p = S.squad[+sel.dataset.addpos]; p.pos = [...p.pos, sel.value]; preview = null; persist(); render(); }));
   v.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => { const p = S.squad[+b.dataset.ri]; p.roles ||= []; const r = b.dataset.role; p.roles = p.roles.includes(r) ? p.roles.filter(x => x !== r) : [...p.roles, r]; preview = null; persist(); render(); }));
-  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],present:true,minutes:0}); persist(); render(); });
+  $("#addP")?.addEventListener("click", () => { let n = S.squad.length + 1; while (S.squad.some(p => p.name === "Joueur " + n)) n++; S.squad.push({name:"Joueur " + n,pos:[],posSys:S.preset,present:true,minutes:0}); persist(); render(); });
   ["#clearMin", "#clearMin2"].forEach(id => $(id)?.addEventListener("click", () => { S.squad.forEach(p => p.minutes = 0); preview=null; persist(); render(); }));
-  $("#preset")?.addEventListener("change", e => { S.preset = e.target.value; S.lineup = {}; preview=null; persist(); render(); });
+  $("#preset")?.addEventListener("change", e => { setPreset(e.target.value); S.lineup = {}; preview=null; persist(); render(); });
   v.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => { coachTab = b.dataset.ctab; render(); }));
-  v.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => { coachStep = coachStep === b.dataset.step ? null : b.dataset.step; rulesResetArmed = false; render(); }));
+  v.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => { coachStep = coachStep === b.dataset.step ? null : b.dataset.step; rulesResetArmed = false; posNote = ""; render(); }));
   bindRules(v);
   v.querySelectorAll("[data-lu]").forEach(el => el.addEventListener("change", () => { const id = el.dataset.lu; for (const k in S.lineup) if (S.lineup[k] === el.value && k !== id) delete S.lineup[k]; if (el.value) S.lineup[id] = el.value; else delete S.lineup[id]; preview=null; persist(); render(); }));
   $("#pdfB")?.addEventListener("click", makePdf);
