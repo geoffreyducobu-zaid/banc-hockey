@@ -59,7 +59,7 @@ function applyColor(){
 }
 const canVibrate = typeof navigator !== "undefined" && "vibrate" in navigator;
 let far = false; try { far = localStorage.getItem("banc-far") === "1"; } catch(e){}
-let season = null, seasonMsg = "", pdfMsg = "";
+let season = null, seasonMsg = "", pdfMsg = "", seasonPdfNotes = false, seasonPdfMsg = "";
 let saveState = "";
 let C = loadClock();
 
@@ -622,6 +622,32 @@ async function makePdf(){
     done("Plan B téléchargé.");
   } catch(e) { done("Impossible de créer le PDF. Réessaie."); }
 }
+// Export de la saison pour le club : jamais les minutes visées ni l'écart ; les notes seulement si le coach coche la case.
+async function seasonPdf(){
+  const btn = $("#seasonPdf"); if (btn) { btn.disabled = true; btn.textContent = "Préparation…"; }
+  const done = msg => { seasonPdfMsg = msg; render(); };
+  try {
+    await loadJsPdf();
+    const { jsPDF } = window.jspdf; const doc = new jsPDF({unit:"mm", format:"a4"});
+    const stat = seasonStats(), notes = seasonPdfNotes; let y = 16;
+    const txt = (t, x, size = 10, bold = false) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.text(String(t), x, y); };
+    const next = (h = 6) => { y += h; if (y > 282) { doc.addPage(); y = 16; } };
+    txt(`${teamTitle()} - saison`, 14, 16, true); next(7);
+    const us = season.reduce((a, m) => a + (m.us || 0), 0), them = season.reduce((a, m) => a + (m.them || 0), 0);
+    txt(`${season.length} match${season.length > 1 ? "s" : ""} enregistré${season.length > 1 ? "s" : ""} · buts ${us}-${them} · ${new Date().toLocaleDateString("fr-BE")}`, 14, 10); next(9);
+    const cols = [["Joueur", 14], ["Matchs", 74], ["Buts", 92], ["Cartes V/J/R", 108], ["Total", 136], ["Moyenne", 156]].concat(notes ? [["Note moy.", 180]] : []);
+    cols.forEach(([l, x]) => txt(l, x, 9, true)); next(2); doc.setDrawColor(180); doc.line(14, y, 196, y); next(5);
+    Object.entries(stat).sort((a, b) => b[1].tot - a[1].tot).forEach(([n, st]) => {
+      const row = [n.length > 30 ? n.slice(0, 29) + "…" : n, st.n, st.g || "-", `${st.cv}/${st.cj}/${st.cr}`, R.fmtMin(st.tot), st.n ? R.fmtMin(st.tot / st.n) : "-"]
+        .concat(notes ? [st.rn ? String(Math.round(st.rt / st.rn * 10) / 10).replace(".", ",") + "/10" : "-"] : []);
+      row.forEach((v, k) => txt(v, cols[k][1], 10)); next();
+    });
+    next(4); txt("Matchs", 14, 12, true); next(7);
+    season.forEach(m => { txt([m.date, m.label].filter(Boolean).join(" · ") || "Match", 14, 10); if (m.us !== undefined) txt(`${m.us}-${m.them}`, 160, 10, true); next(); });
+    doc.save(`saison-${slug(S.teamName || "equipe")}.pdf`);
+    done("Saison téléchargée en PDF.");
+  } catch(e) { done("Impossible de créer le PDF. Réessaie."); }
+}
 /* ---------- backup file ---------- */
 function exportBackup(){
   let seasonL = []; try { seasonL = JSON.parse(localStorage.getItem("banc-season") || "[]"); } catch(e){}
@@ -702,12 +728,16 @@ function ratingCard(){
     <p class="muted" style="margin:4px 0 10px;font-size:.9rem">${esc([m.date, m.label].filter(Boolean).join(" · "))}${m.us !== undefined ? ` · ${m.us}–${m.them}` : ""}. Une note sur 10 pour chaque joueur qui a joué. Elle est gardée dans ta saison et n'apparaît que dans la page Coach.</p>
     ${rows ? `<div class="mins">${rows}</div>` : `<p class="muted">Personne n'a joué dans ce match.</p>`}</div>`;
 }
-function seasonHtml(){
-  if (season === null) { loadSeason(); return `<p class="muted">Chargement…</p>`; }
-  if (!season.length) return `<p class="muted">Aucun match enregistré. À la fin d'un match, touche « Enregistrer le match dans la saison » (onglet Match ou ci-dessus).</p>`;
+function seasonStats(){
   const stat = {};
   const blank = () => ({n:0,tot:0,dev:0,g:0,rn:0,rt:0,cv:0,cj:0,cr:0});
   season.forEach(m => { Object.entries(m.minutes||{}).forEach(([n,v]) => { const s = stat[n] ||= blank(); s.n++; s.tot += v; s.dev += v - (m.targets?.[n] ?? v); }); (m.scorers||[]).forEach(n => { (stat[n] ||= blank()).g++; }); Object.entries(m.ratings||{}).forEach(([n,v]) => { const s = stat[n] ||= blank(); s.rn++; s.rt += v; }); (m.cards||[]).forEach(c => { const k = c.type === "vert" ? "cv" : c.type === "rouge" ? "cr" : c.type === "jaune" || c.type === "jaune10" ? "cj" : ""; if (k && c.player) (stat[c.player] ||= blank())[k]++; }); });
+  return stat;
+}
+function seasonHtml(){
+  if (season === null) { loadSeason(); return `<p class="muted">Chargement…</p>`; }
+  if (!season.length) return `<p class="muted">Aucun match enregistré. À la fin d'un match, touche « Enregistrer le match dans la saison » (onglet Match ou ci-dessus).</p>`;
+  const stat = seasonStats();
   const rows = Object.entries(stat).sort((a,b)=>b[1].tot-a[1].tot).map(([n,s]) => {
     const sug = s.rn ? `<b>${String(Math.round(s.rt / s.rn * 10) / 10).replace(".", ",")}</b><span class="muted">/10</span>` : `<span class="muted">—</span>`;
     const cards = [["cv","g"],["cj","y"],["cr","r"]].filter(([k]) => s[k]).map(([k,c]) => `<span class="cardn ${c}">${s[k]}</span>`).join("");
@@ -1199,6 +1229,10 @@ function seasonTab(){
     <div class="row">${S.plan && !S.plan.savedAt ? `<button class="btn primary" id="saveMatchC">Enregistrer le match en cours</button>` : ""}</div></div>
     ${seasonMsg ? `<div class="ok" style="margin-top:8px">${esc(seasonMsg)}</div>` : ""}
     <div style="margin-top:12px">${seasonHtml()}</div>
+    ${season?.length ? `<div class="row" style="margin-top:12px;flex-wrap:wrap;gap:10px"><button class="btn" id="seasonPdf">📄 Exporter la saison (PDF)</button>
+      <label class="row" style="gap:6px;font-size:.9rem"><input type="checkbox" id="seasonPdfNotes"${seasonPdfNotes ? " checked" : ""}> Avec les notes</label></div>
+      <p class="muted" style="margin:6px 0 0;font-size:.85rem">Pour le club ou ton staff : matchs, minutes, buts et cartes de chaque joueur. Les notes n'y sont que si tu coches la case.</p>
+      ${seasonPdfMsg ? `<div class="ok" style="margin-top:8px">${esc(seasonPdfMsg)}</div>` : ""}` : ""}
   </div>${ratingCard()}`;
 }
 
@@ -1613,6 +1647,8 @@ function bindCoach(){
   $("#mLabel")?.addEventListener("change", e => { S.matchLabel = e.target.value.trim(); persist(); render(); });
   $("#mDate")?.addEventListener("change", e => { S.matchDate = e.target.value; persist(); render(); });
   $("#saveMatchC")?.addEventListener("click", saveMatch);
+  $("#seasonPdfNotes")?.addEventListener("change", e => { seasonPdfNotes = e.target.checked; });
+  $("#seasonPdf")?.addEventListener("click", seasonPdf);
   document.querySelectorAll("[data-tmode]").forEach(b => b.addEventListener("click", () => { S.timeMode = b.dataset.tmode; preview = null; persist(); render(); }));
   $("#cList")?.addEventListener("click", () => { matchesOpen = true; goTo("match"); });
   document.querySelectorAll("[data-ratem]").forEach(b => b.addEventListener("click", () => { rateId = rateId === b.dataset.ratem ? null : b.dataset.ratem; render(); if (rateId) $(".rate-card")?.scrollIntoView({behavior:"smooth", block:"start"}); }));

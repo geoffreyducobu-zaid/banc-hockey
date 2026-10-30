@@ -39,6 +39,7 @@ const GUIDE = [
     `À la fin du dernier quart, le match s'enregistre tout seul dans la saison.`,
     `Touche <b>« Noter les joueurs »</b> pour donner une note sur 10 à chacun. Ces notes restent dans Coach, protégées par ton code.`,
     `<b>Coach › Saison</b> : temps de jeu, buts, cartons et note moyenne de chaque joueur sur toute la saison.`,
+    `<b>Exporter la saison (PDF)</b>, en bas de Coach › Saison : un récapitulatif pour le club ou ton staff. Les notes n'y sont que si tu coches « Avec les notes ».`,
   ], go: [["coach:season", "Saison"]]},
   {t: "Tes données", steps: [
     `<b>Avec un compte</b>, tout est sauvegardé en ligne : connecte-toi sur un autre téléphone et tu retrouves tout.`,
