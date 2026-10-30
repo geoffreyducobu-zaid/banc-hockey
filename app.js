@@ -1154,8 +1154,8 @@ function settingsView(){
 }
 // « Signaler un souci » : mail prérempli avec la version de l'app et le téléphone (rien sur les joueurs).
 const REPORT_TO = "contact@stickmate.be";
-// Caché tant que la boîte contact@stickmate.be n'est pas active chez OVH : remettre à true ensuite.
-const REPORT_ON = false;
+// Boîte contact@stickmate.be active depuis le 30/10/2026 (renvoi vers le Gmail de Goutch).
+const REPORT_ON = true;
 function reportLink(){
   const v = (document.querySelector('script[src*="app.js"]')?.getAttribute("src") || "").match(/v=(\d+)/)?.[1] || "?";
   const body = `Ce que je faisais :\n\n\nCe qui s'est passé (ou ce qui n'est pas clair) :\n\n\n---\nStickMate version ${v}\n${navigator.userAgent}`;
