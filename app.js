@@ -1381,6 +1381,7 @@ function rulesBody(){
       <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     ${ruleRow("maxMoves", "Changements de poste sur le terrain", "max", "Pour chaque joueur qui entre, joueurs déjà sur le terrain qui changent de place, au maximum. À 0, celui qui entre prend toujours la place de celui qui sort.", r.maxMoves, 'data-rule="maxMoves"')}
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
+    <div class="set"><div><b>Banc maximum d'affilée, pauses comprises</b><div class="muted">Entre sa sortie et sa rentrée, même à cheval sur une pause (seules les minutes de jeu comptent). Vide = pas de limite.</div></div><span class="rnum"><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-ropt="maxBenchRun" value="${esc(r.maxBenchRun || "")}" placeholder="—" aria-label="Banc maximum d'affilée, pauses comprises"><small>min</small></span></div>
     ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
   </div>
   <p class="muted" style="margin:10px 4px 0;font-size:.85rem">Ces règles-là valent sur tout le match : un passage peut commencer dans un ${pWord()} et finir dans le suivant.</p>
@@ -1390,6 +1391,7 @@ function rulesBody(){
 }
 function bindRules(v){
   v.querySelectorAll("[data-rule]").forEach(el => el.addEventListener("change", () => { const k = el.dataset.rule; if (el.value === "" || isNaN(+el.value) || +el.value < 0) { render(); return; } S.rules[k] = k === "qlen" ? Math.max(5, +el.value) : +el.value; rulesChanged(); }));
+  v.querySelectorAll("[data-ropt]").forEach(el => el.addEventListener("change", () => { const k = el.dataset.ropt, n = +el.value; if (el.value === "" || !(n > 0)) delete S.rules[k]; else S.rules[k] = n; rulesChanged(); }));
   v.querySelectorAll("[data-rb]").forEach(b => b.addEventListener("click", () => { S.rules[b.dataset.rb] = b.dataset.v === "true"; rulesChanged(); }));
   v.querySelectorAll("[data-fmt]").forEach(b => b.addEventListener("click", () => { if (!matchStarted()) setFormat(b.dataset.fmt); }));
   v.querySelectorAll("[data-perq]").forEach(b => b.addEventListener("click", () => { rulesQ = b.dataset.perq === "base" ? null : +b.dataset.perq; render(); }));
