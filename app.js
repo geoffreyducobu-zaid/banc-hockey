@@ -546,7 +546,7 @@ function swapPanel(seg){
   const bench = present().map(p=>p.name).filter(n => !(n in seg.on) && !outForGood().includes(n)).sort((a,b) => canQ(b) - canQ(a));
   return `<div class="card incp"><h2>Changement hors plan</h2>
     <div class="muted" style="margin:0 0 6px;font-size:.9rem">Qui sort ?</div>
-    <div class="inc-players">${onField.map(n => `<button class="btn" data-swo="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)} <small>${esc(posShort(seg.on[n]))}</small></button>`).join("")}</div>
+    <div class="inc-players">${onField.map(n => `<button class="btn" data-swo="${esc(n)}" aria-pressed="${inc.player===n}">${esc(n)} <small>${esc(gShort(seg.on[n]))}</small></button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui entre ?</div>
     <div class="inc-players">${bench.map(n => `<button class="btn${outQ && !canQ(n) ? " dim" : ""}" data-swi="${esc(n)}" aria-pressed="${inc.inP===n}">${esc(n)}${outQ && !canQ(n) ? " <small>autre poste</small>" : ""}</button>`).join("") || '<span class="muted">Personne sur le banc</span>'}</div>
     ${outQ && inc.inP && S.plan?.manual ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)} et reprend ses changements prévus dans ta liste (et inversement).</div>` : outQ && inc.inP ? `<div class="muted" style="margin-top:10px;font-size:.92rem">${canQ(inc.inP) ? `${esc(inc.inP)} prend le poste ${pill(outQ)} de ${esc(inc.player)}.` : `${esc(inc.inP)} ne joue pas ${esc(posName(outQ).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(outQ).toLowerCase())} jusqu'à la fin du match.`} Le reste du plan est recalculé.</div>` : ""}
@@ -574,9 +574,9 @@ function incidentPanel(seg){
   const q = inc.type === "bless" && inc.player ? seg.on[inc.player] : null;
   const subs = q ? injuryBench(seg, inc.player, matchT()) : [];
   if (q && inc.inP === undefined) inc.inP = subs[0]?.name || null;
-  const subHtml = q ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui le remplace au poste ${pill(q)} ${esc(posName(q))} ?</div>
+  const subHtml = q ? `<div class="muted" style="margin:10px 0 6px;font-size:.9rem">Qui le remplace au poste ${pill(q)} ${esc(gName(q))} ?</div>
     <div class="inc-players">${subs.map((x,k) => `<button class="btn${x.knows ? "" : " dim"}" data-incin="${esc(x.name)}" aria-pressed="${inc.inP===x.name}">${esc(x.name)}${k===0 && (x.knows || x.line) ? " <small>conseillé</small>" : ""}${x.knows ? "" : x.line ? " <small>même ligne</small>" : " <small>hors poste</small>"}</button>`).join("") || '<span class="muted">Personne sur le banc : on joue à 10.</span>'}</div>
-    ${S.plan?.manual && inc.inP ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} prend le poste ${esc(posName(q).toLowerCase())} et reprend les changements prévus de ${esc(inc.player)}.</div>` : inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} ne joue pas ${esc(posName(q).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(q).toLowerCase())} jusqu'à la fin du match.</div>` : ""}` : "";
+    ${S.plan?.manual && inc.inP ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} prend le poste ${esc(gName(q).toLowerCase())} et reprend les changements prévus de ${esc(inc.player)}.</div>` : inc.inP && !subs.find(x => x.name === inc.inP)?.knows ? `<div class="muted" style="margin-top:8px;font-size:.92rem">${esc(inc.inP)} ne joue pas ${esc(posName(q).toLowerCase())} : l'app réorganise le terrain pour qu'il prenne un poste qu'il connaît. Si c'est impossible, il jouera ${esc(posName(q).toLowerCase())} jusqu'à la fin du match.</div>` : ""}` : "";
   return `<div class="card incp"><h2>Imprévu</h2>
     <div class="inc-types">${Object.entries(INC).map(([k,v]) => `<button class="btn inc-t ${k}" data-inct="${k}" aria-pressed="${inc.type===k}">${v.icon} ${esc(v.label)}${v.d?` ${v.d}'`:""}</button>`).join("")}</div>
     <div class="muted" style="margin:10px 0 6px;font-size:.9rem">Quel joueur ?</div>
@@ -631,7 +631,7 @@ async function makePdf(){
       list.forEach(c => {
         const lab = Math.abs(c.t-(q-1)*ql) < 1e-6 ? "Pause" : fmtQ(c.t).label;
         line(lab, 11, true, 16);
-        pairChanges(c).forEach(pr => line(`${pr.inP || "-"} remplace ${pr.outP || "-"}${pr.inQ ? "  (" + posName(pr.inQ) + ")" : ""}`, 10, false, 30));
+        pairChanges(c).forEach(pr => line(`${pr.inP || "-"} remplace ${pr.outP || "-"}${pr.inQ ? "  (" + gName(pr.inQ) + ")" : ""}`, 10, false, 30));
         moveGroups(c).forEach(g => line(`Changement de poste : ${moveText(g)}`, 9, false, 30));
       });
     }
@@ -787,7 +787,10 @@ function render(){
   v.innerHTML = view(); bind();
 }
 function goTo(m){ if (m === mode) return; mode = m; inc = null; helpOpen = null; render(); window.scrollTo(0, 0); }
-function pill(id){ const m = posMeta(id); return `<span class="pos ${m.line}" title="${esc(m.label)}">${esc(m.short)}</span>`; }
+// Dans le plan et pendant le match : place générale (« Milieu déf. »), sans le côté. Seule la compo de départ dit le côté.
+const gName = (id, sys = S.preset) => placeGroup(id, sys)?.[1] || posName(id, sys);
+const gShort = (id, sys = S.preset) => placeGroup(id, sys)?.[2] || posShort(id, sys);
+function pill(id){ const m = posMeta(id); return `<span class="pos ${m.line}" title="${esc(gName(id))}">${esc(gShort(id))}</span>`; }
 
 function pairChanges(ch){
   const outs = ch.outs.map(([p,q]) => ({p,q})), ins = ch.ins.map(([p,q]) => ({p,q}));
@@ -816,7 +819,7 @@ function moveGroups(ch){
   ch.moves.forEach(([p, a, b], k) => { if (!used.has(k)) { used.add(k); out.push({p, a, b}); chainFrom(a); } });
   return out;
 }
-const lc = id => posName(id).toLowerCase();
+const lc = id => gName(id).toLowerCase();
 function moveText(g){
   return g.swap ? `${g.p} et ${g.p2} échangent leur poste (${lc(g.a)} et ${lc(g.b)})` : `${g.p} : ${lc(g.a)} → ${lc(g.b)}`;
 }
@@ -837,7 +840,7 @@ function movePitch(groups, dot){
 function miniPitch(q){
   const p = (PRESETS[S.preset] || []).find(([id]) => id === q);
   if (!p) return "";
-  return `<svg class="mini" viewBox="0 0 62 88" role="img" aria-label="Poste : ${esc(posName(q))}"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g><circle cx="${(1 + p[3]*0.6).toFixed(1)}" cy="${(1 + p[4]*0.86).toFixed(1)}" r="6"/></svg>`;
+  return `<svg class="mini" viewBox="0 0 62 88" role="img" aria-label="Poste : ${esc(gName(q))}"><g><rect x="1" y="1" width="60" height="86" rx="3"/><line x1="1" y1="44" x2="61" y2="44"/><path d="M17 1 A14 14 0 0 0 45 1"/><path d="M17 87 A14 14 0 0 1 45 87"/></g><circle cx="${(1 + p[3]*0.6).toFixed(1)}" cy="${(1 + p[4]*0.86).toFixed(1)}" r="6"/></svg>`;
 }
 function changeLines(ch){
   // Les joueurs déjà sur le terrain qui bougent à cause d'un remplacement sont montrés avec ce remplacement :
@@ -853,12 +856,12 @@ function changeLines(ch){
         ${mv.map((g, i) => `<div class="s-row s-mv"><span class="mk mv" aria-hidden="true">⇄</span><span class="mvt"><span><b>${esc(i + 1 < mv.length ? mv[i + 1].p : pr.inP)}</b> prend la place de <b>${esc(g.p)}</b> (${esc(lc(g.a))}), ${esc(g.p)} passe ${esc(lc(g.b))}</span></span></div>`).join("")}
       </div>
       ${mv.length ? movePitch(mv, pr.inQ) : miniPitch(pr.inQ || pr.outQ)}
-      ${pr.inP && !mv.length ? `<div class="where">${pill(pr.inQ)} ${esc(posMeta(pr.inQ).label)}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(lc(pr.outQ))})</span>` : ""}</div>` : ""}
+      ${pr.inP && !mv.length ? `<div class="where">${pill(pr.inQ)} ${esc(gName(pr.inQ))}${pr.outP && pr.outQ !== pr.inQ ? ` <span class="note">(${esc(pr.outP)} jouait ${esc(lc(pr.outQ))})</span>` : ""}</div>` : ""}
     </div>`; }).join("");
   const mg = moveGroups({...ch, moves: ch.moves.filter((m, i) => !usedM.has(i))});
   if (mg.length) html += `<div class="reorg"><div class="reorg-x"><div class="reorg-t">Changements de poste</div>${mg.map(g => g.swap
       ? `<div class="reorg-l"><div class="rl-h">⇄ <b>${esc(g.p)}</b> et <b>${esc(g.p2)}</b> échangent</div><div class="rl-d"><b>${esc(g.p)}</b> ${pill(g.a)} → ${pill(g.b)}</div><div class="rl-d"><b>${esc(g.p2)}</b> ${pill(g.b)} → ${pill(g.a)}</div></div>`
-      : `<div class="reorg-l"><div class="rl-h"><b>${esc(g.p)}</b></div><div class="rl-d">${pill(g.a)} → ${pill(g.b)} ${esc(posName(g.b))}</div></div>`).join("")}</div>${movePitch(mg)}</div>`;
+      : `<div class="reorg-l"><div class="rl-h"><b>${esc(g.p)}</b></div><div class="rl-d">${pill(g.a)} → ${pill(g.b)} ${esc(gName(g.b))}</div></div>`).join("")}</div>${movePitch(mg)}</div>`;
   return html;
 }
 function matchView(){
@@ -893,7 +896,7 @@ function matchView(){
   const pitch = `<div class="pitch" aria-label="Joueurs sur le terrain">${pitchLines()}${PRESETS[S.preset].map(([id,label,line,x,y]) => {
       const who = onIds.find(([p,q]) => q === id)?.[0] || "Vide";
       const rl = (S.squad.find(p => p.name === who)?.roles || []).join("");
-      return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}${goesTo[who] ? ` → ${esc(posShort(goesTo[who]))}` : ""}</span></div>`;}).join("")}</div>`;
+      return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(gShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}${goesTo[who] ? ` → ${esc(posShort(goesTo[who]))}` : ""}</span></div>`;}).join("")}</div>`;
   const hurt = outForGood();
   const benchNames = present().map(p=>p.name).filter(n => !(n in seg.on)).map(n => hurt.includes(n) ? n + " 🩹" : n);
   const qChanges = visChanges(plan).filter(c => fmtQ(c.t).q === C.q || (Math.abs(c.t - (C.q-1)*ql) < 1e-6 && C.q>1) || (Math.abs(c.t - C.q*ql)<1e-6));
@@ -1372,7 +1375,7 @@ function rulesBody(){
       <div class="rline">${[["firstDef","minDef","Défense"],["firstMid","minMid","Milieu"],["firstAtt","minAtt","Attaque"]].map(([k,m,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k] ?? r[m])}" aria-label="Minimum avant de sortir pour un titulaire au début du match, ${l.toLowerCase()}"></label>`).join("")}</div></div>
     <div class="set"><div><b>Maximum d'affilée sur le terrain</b><div class="muted">Jamais plus longtemps sans sortir, selon sa ligne. ${halves() ? "La pause de la mi-temps remet" : "La pause entre deux quarts remet"} ce compteur à zéro.</div></div>
       <div class="rline">${[["maxDef","Défense"],["maxMid","Milieu"],["maxAtt","Attaque"]].map(([k,l]) => `<label><span>${l}</span><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-rule="${k}" value="${esc(r[k])}" aria-label="Maximum d'affilée, ${l.toLowerCase()}"></label>`).join("")}</div></div>
-    ${ruleRow("maxMoves", "Changements de poste sur le terrain", "max", "À chaque changement, joueurs déjà sur le terrain qui changent de place, au maximum. À 0, celui qui entre prend toujours la place de celui qui sort.", r.maxMoves, 'data-rule="maxMoves"')}
+    ${ruleRow("maxMoves", "Changements de poste sur le terrain", "max", "Pour chaque joueur qui entre, joueurs déjà sur le terrain qui changent de place, au maximum. À 0, celui qui entre prend toujours la place de celui qui sort.", r.maxMoves, 'data-rule="maxMoves"')}
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
     ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
   </div>
@@ -1489,7 +1492,7 @@ function manualApply(){
 }
 function manualPitch(t){
   const on = manualState(t).on, who = q => Object.keys(on).find(n => on[n] === q) || "Vide";
-  return pitchLines() + PRESETS[S.preset].map(([id, label, line, x, y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(posShort(id))}</span><span class="nm">${esc(who(id))}</span></div>`).join("");
+  return pitchLines() + PRESETS[S.preset].map(([id, label, line, x, y]) => `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(gShort(id))}</span><span class="nm">${esc(who(id))}</span></div>`).join("");
 }
 function manualCard(){
   const ql = +S.rules.qlen, nq = S.rules.quarters, q = Math.min(mq, nq), qa = (q - 1) * ql, started = matchStarted(), now = started ? matchT() : -1, lock = !!S.plan?.savedAt;
@@ -1622,7 +1625,7 @@ function previewHtml(){
   const names = Object.keys(plan.played).sort((a,b)=>plan.played[b]-plan.played[a]);
   const END = S.rules.quarters*S.rules.qlen;
   const rec = names.map(n => { const d = plan.played[n]-plan.targets[n]; return `<tr><td>${esc(n)}</td><td>${R.fmtMin(plan.played[n])}</td><td class="muted">${R.fmtMin(plan.targets[n])}</td><td class="dev" style="color:${Math.abs(d)<=1.5?"var(--in)":"var(--out)"}">${d>=0?"+":"−"}${R.fmtMin(Math.abs(d))}</td></tr>`; }).join("");
-  const tl = names.map(n => `<div class="tlr"><div>${esc(n)}</div><div class="trk">${plan.segs.map(s => s.on[n] ? `<i style="left:${s.a/END*100}%;width:${(s.b-s.a)/END*100}%;background:var(--${posMeta(s.on[n]).line})">${(s.b-s.a)>=2.5?esc(posShort(s.on[n])):""}</i>` : "").join("")}${Array.from({length:S.rules.quarters-1}, (_,k) => `<span class="q" style="left:${(k+1)/S.rules.quarters*100}%"></span>`).join("")}</div></div>`).join("");
+  const tl = names.map(n => `<div class="tlr"><div>${esc(n)}</div><div class="trk">${plan.segs.map(s => s.on[n] ? `<i style="left:${s.a/END*100}%;width:${(s.b-s.a)/END*100}%;background:var(--${posMeta(s.on[n]).line})">${(s.b-s.a)>=2.5?esc(gShort(s.on[n])):""}</i>` : "").join("")}${Array.from({length:S.rules.quarters-1}, (_,k) => `<span class="q" style="left:${(k+1)/S.rules.quarters*100}%"></span>`).join("")}</div></div>`).join("");
   return `${tag}${modeTag}${warn}<div class="grid2" style="margin-top:12px"><div class="tbl-wrap"><table class="recap"><thead><tr><th>Joueur</th><th>Prévu</th><th>Visé</th><th>Écart</th></tr></thead><tbody>${rec}</tbody></table></div><div class="tl"><div class="tl-in">${tl}</div></div></div>`;
 }
 // Remplace un nom de joueur partout dans un objet (valeurs et clés), sans toucher aux textes.

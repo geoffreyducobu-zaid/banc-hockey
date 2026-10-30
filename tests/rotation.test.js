@@ -271,7 +271,7 @@ test("joueurs qui ne sortent pas d'un quart et changements de poste limités", (
   }
   for (let i = 1; i < plan2.segs.length; i++) {
     const A = plan2.segs[i - 1].on, B = plan2.segs[i].on;
-    const mv = Object.keys(B).filter(p => p in A && A[p] !== B[p]).length;
-    assert.ok(mv <= 1 || plan2.warnings.some(w => w.includes("changent de poste")), `${mv} changements de poste à ${plan2.segs[i].a}`);
+    const mv = R.chainMax(new Map(Object.entries(A)), new Map(Object.entries(B))); // par joueur qui entre
+    assert.ok(mv <= 1 || plan2.warnings.some(w => w.includes("changer de poste")), `${mv} changements de poste à ${plan2.segs[i].a}`);
   }
 });

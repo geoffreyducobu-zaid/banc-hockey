@@ -83,6 +83,24 @@
     return miss;
   }
 
+  // Changements de poste d'un changement à l'autre (A puis B : joueur -> poste), comptés par joueur qui entre :
+  // celui qui entre prend la place de X, X glisse à la place de Y… jusqu'à la place d'un sortant. On rend la plus longue chaîne
+  // (nombre de joueurs du terrain qui changent de poste pour une entrée). Un échange sans entrée compte pour lui-même.
+  function chainMax(A, B) {
+    const at = new Map(); for (const [p, q] of A) at.set(q, p);
+    const seen = new Set(); let mx = 0;
+    for (const [e, q0] of B) if (!A.has(e)) {
+      let q = q0, n = 0;
+      for (let g = 0; g < 20; g++) { const o = at.get(q); if (o === undefined || !B.has(o) || seen.has(o) || B.get(o) === q) break; seen.add(o); n++; q = B.get(o); }
+      mx = Math.max(mx, n);
+    }
+    for (const [p, q] of B) if (A.has(p) && A.get(p) !== q && !seen.has(p)) {
+      let n = 0, x = p; while (x !== undefined && !seen.has(x) && A.has(x) && B.has(x) && A.get(x) !== B.get(x)) { seen.add(x); n++; x = at.get(B.get(x)); }
+      mx = Math.max(mx, n);
+    }
+    return mx;
+  }
+
   function changeTimes(R) {
     const T = new Set();
     for (let q = 0; q < R.quarters; q++) {
@@ -301,7 +319,6 @@
       const C = list.map(p => { const r = baseRow[p].slice(), pq = prev.get(p); if (pq !== undefined) for (let k = 0; k < r.length; k++) if (k !== posIx[pq]) r[k] += mv; return r; });
       const asg = hungarian(C), r = new Map(); for (let k = 0; k < list.length; k++) { if (C[k][asg[k]] >= 1e9) return null; r.set(list[k], posIds[asg[k]]); } return r;
     }
-    const movesOf = (prev, r) => { let n = 0; for (const [p, q] of r) if (prev.has(p) && prev.get(p) !== q) n++; return n; };
     function segCostOf(s) {
       const list = []; for (let i = 0; i < nP; i++) if (on[s][i]) list.push(players[i]);
       if (!seqPos && !canMatch(list, posIds, can)) return Infinity;
@@ -312,8 +329,8 @@
         else {
           const prev = segAsg[s - 1], mm = rq(R, qOf(s), 'maxMoves');
           m = placeSeg(list, prev, 6); if (!m) return Infinity;
-          if (mm != null && movesOf(prev, m) > mm) { const m2 = placeSeg(list, prev, 1000); if (movesOf(prev, m2) < movesOf(prev, m)) m = m2; }
-          segMv[s] = movesOf(prev, m);
+          if (mm != null && chainMax(prev, m) > mm) { const m2 = placeSeg(list, prev, 1000); if (m2 && chainMax(prev, m2) < chainMax(prev, m)) m = m2; }
+          segMv[s] = chainMax(prev, m);
         }
         segAsg[s] = m; for (const [p, q] of m) c += can[p].has(q) ? I.pref[p][q] : 3;
       } else {
@@ -373,7 +390,7 @@
         }));
         const asg = hungarian(C); m = new Map(); list.forEach((p, k) => m.set(p, posIds[asg[k]]));
         // trop de changements de poste : on garde le placement qui en fait le moins
-        const mm = rq(R, qOf(s), 'maxMoves'), mv = r => { let n = 0; for (const [p, q] of r) if (prev.has(p) && prev.get(p) !== q) n++; return n; };
+        const mm = rq(R, qOf(s), 'maxMoves'), mv = r => chainMax(prev, r);
         if (mm != null && mv(m) > mm) {
           const C2 = list.map((p, k) => C[k].map((c, j) => c + (prev.has(p) && prev.get(p) !== posIds[j] ? 1000 : 0)));
           const a2 = hungarian(C2), m2 = new Map(); list.forEach((p, k) => m2.set(p, posIds[a2[k]])); if (mv(m2) < mv(m)) m = m2;
@@ -444,7 +461,7 @@
     // seq : calcul fin des postes, plus lent, donc deux fois moins de pas
     const runSA = seq => { I.seqPos = seq; let b = null; for (let c = 0; c < (input.chains || 3); c++) { const sa = anneal(I, start, rand, Math.round((input.saIters || 30000) * (seq ? 0.5 : 1))); if (!b || sa.saScore < b.saScore) b = sa; } return b; };
     // changements de poste au-delà du maximum du coach, pour un plan
-    const movesOver = segs => { let n = 0; for (let i = 1; i < segs.length; i++) { const mm = rq(R, Math.min(R.quarters - 1, Math.floor((segs[i].a + EPS) / R.qlen)), 'maxMoves'); if (mm == null) continue; let k = 0; for (const [p, q] of segs[i].on) if (segs[i - 1].on.has(p) && segs[i - 1].on.get(p) !== q) k++; n += Math.max(0, k - mm); } return n; };
+    const movesOver = segs => { let n = 0; for (let i = 1; i < segs.length; i++) { const mm = rq(R, Math.min(R.quarters - 1, Math.floor((segs[i].a + EPS) / R.qlen)), 'maxMoves'); if (mm == null) continue; n += Math.max(0, chainMax(segs[i - 1].on, segs[i].on) - mm); } return n; };
     let bestSA = runSA(false);
     if (movesOver(bestSA.segs)) { const alt = runSA(true); if (movesOver(alt.segs) < movesOver(bestSA.segs)) bestSA = alt; }
     best = bestSA; bestScore = bestSA.saScore;
@@ -641,8 +658,8 @@
       const ok = atBreak ? q > 0 && rq(R, q, 'breakChanges') : m >= rq(R, q, 'startBlock') - EPS && m <= R.qlen - rq(R, q, 'endBlock') + EPS;
       if (!ok) out.push(`Changement à ${fmtMin(m)} du ${pName(q)} : en dehors des moments permis`);
       if (ins > rq(R, q, 'maxEntries')) out.push(`${ins} joueurs entrent en même temps à ${fmtMin(m)} du ${pName(q)} (maximum ${rq(R, q, 'maxEntries')})`);
-      const mv = Object.keys(segs[i].on).filter(p => p in segs[i - 1].on && segs[i - 1].on[p] !== segs[i].on[p]).length, mm = rq(R, q, 'maxMoves');
-      if (mm != null && mv > mm) out.push(`${mv} joueurs changent de poste sur le terrain à ${fmtMin(m)} du ${pName(q)} (maximum ${mm})`);
+      const mv = chainMax(new Map(Object.entries(segs[i - 1].on)), new Map(Object.entries(segs[i].on))), mm = rq(R, q, 'maxMoves');
+      if (mm != null && mv > mm) out.push(`À ${fmtMin(m)} du ${pName(q)}, une entrée fait changer de poste ${mv} joueurs du terrain (maximum ${mm})`);
     }
     for (const p of players) {
       const field = p.pos.some(q => q !== c.gk), fixed = p.locked || p.oneBlock;
@@ -700,6 +717,6 @@
     return { segs, changes, played, targets, intervals: iv, warnings: warnings || [], events, score: 0 };
   }
 
-  root.Rotation = { rq, migrateRules, checkRules, buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
+  root.Rotation = { rq, chainMax, migrateRules, checkRules, buildPlan, targetsFromNotes, targetsEqual, fmtMin, changeTimes, replan, roleGaps };
   if (typeof module !== 'undefined') module.exports = root.Rotation;
 })(typeof window !== 'undefined' ? window : globalThis);
