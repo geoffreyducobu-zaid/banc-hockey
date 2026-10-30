@@ -108,7 +108,7 @@ function adjAsk(kind, data = {}){
   clearTimeout(adjWait);
   adjWait = setTimeout(() => { adjWait = null; incBusy = false; incMsg = "Pas de réponse du téléphone du coach (app fermée ou pas de réseau ?). Réessaie."; render(); }, 8000);
 }
-const adjInc = () => ({type:inc.type, player:inc.player, inP:inc.inP ?? null, pos:inc.pos || null, catchUp:!!inc.catchUp});
+const adjInc = () => ({type:inc.type, player:inc.player, inP:inc.inP ?? null, pos:inc.pos || null, catchUp:!!inc.catchUp, inv:!!inc.inv});
 function adjAnswer(p){
   if (p?.to !== SID) return;
   clearTimeout(adjWait); adjWait = null; incBusy = false;
