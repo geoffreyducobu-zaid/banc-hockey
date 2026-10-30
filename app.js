@@ -809,8 +809,7 @@ function matchView(){
     else if (secs <= S.rules.alertSec) { cls = "soon"; title = "Préparez-vous"; }
     if (isBreakChange && !atEnd && secs > S.rules.alertSec) count = "À la pause";
     alertHtml = `<div class="alert ${cls}" id="alertCard"><div class="alert-head"><div><div class="alert-title">${title}</div><div class="alert-when">${esc(when)}</div></div><div class="count" id="count">${esc(count)}</div></div>
-      <div class="moves">${changeLines(next)}</div>
-      ${cls==="now" ? `<button class="btn big" id="doneBtn" style="background:#fff;color:#0b5a32">C'est fait ✓</button>` : ""}</div>`;
+      <div class="moves">${changeLines(next)}</div></div>`;
   }
   const seg = segAt(plan, Math.min(t, plan.segs[plan.segs.length-1].b - 0.01));
   const upcomingIds = next ? new Set(next.outs.map(o=>o[0]).concat(next.moves.map(m=>m[0]))) : new Set();
@@ -894,7 +893,6 @@ function bindMatch(){
   $("#nextQ")?.addEventListener("click", () => { markBreakDone(); nextQuarter(); });
   $("#m10")?.addEventListener("click", () => adjust(-10));
   $("#p10")?.addEventListener("click", () => adjust(10));
-  $("#doneBtn")?.addEventListener("click", () => { const t = matchT(); const nx = visChanges(S.plan).find(c => !C.done.includes(c.t) && c.t >= t - 0.36); if (nx) C.done.push(nx.t); pushClock(); render(); });
   $("#reset")?.addEventListener("click", function(){ if (this.dataset.armed) { if (ADJ) adjAsk("reset"); else resetMatch(); } else { this.dataset.armed = 1; this.textContent = "Sûr ? Touche encore"; } });
   $("#m60")?.addEventListener("click", () => adjust(-60));
   $("#p60")?.addEventListener("click", () => adjust(60));
