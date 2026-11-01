@@ -139,12 +139,14 @@
       const need = p => (targets[p] - st[p].played) / Math.max(remain, EPS);
       // eligibility
       const canEnter = p => remain >= I.minS[p] - EPS && (t - st[p].since) >= R.minBench - EPS;
-      const canLeave = p => !locked.has(p) && !(I.stay[p] && I.stay[p].has(qi)) && (t - st[p].since) >= minOn(I, p, st[p].since) - EPS;
+      const lastCall = !R.until && next >= END - EPS; // dernier moment de changement du match
+      const canLeave = p => !locked.has(p) && !(I.stay[p] && I.stay[p].has(qi)) && !(lastCall && I.fin.has(p)) && (t - st[p].since) >= minOn(I, p, st[p].since) - EPS;
       const gkChangeOk = isBreak || !rq(R, qi, 'gkOnlyAtBreaks');
       // forced
       const forcedOut = onList.filter(p => !locked.has(p) && longestRun(st[p].since, next, R.qlen, I.stay[p]) > I.maxS[p] + EPS && canLeave(p));
       const forcedIn = benchList.filter(p => {
         if (I.stay[p] && I.stay[p].has(qi) && remain > EPS) return true; // ne doit pas sortir de ce quart : il rentre dès que possible
+        if (lastCall && I.fin.has(p)) return true; // termine le match sur le terrain
         if (!canEnter(p)) return false;
         const bq = Math.max(st[p].since, qStart(t));
         const nextOpp = Math.min(next, qEnd);
@@ -214,6 +216,7 @@
         if (!I.locked.has(p) && longestRun(a, b, R.qlen, I.stay[p]) > I.maxS[p] + EPS) v += 1;
       }
       if (I.stay[p]) v += Math.ceil(stayMiss(iv[p], I.stay[p], R.qlen, R.from || 0, END) - EPS) * 2;
+      if (!R.until && I.fin.has(p) && !(iv[p].length && iv[p][iv[p].length - 1][1] >= END - EPS)) v += 2;
       if (!I.fieldPlayer[p] || I.locked.has(p)) continue;
       let t = R.from || 0; const off = [];
       for (const [a, b] of iv[p]) { if (a > t) off.push([t, a]); t = b; }
@@ -275,6 +278,7 @@
           const pv = s > 0 ? on[s - 1][i] : 0;
           if (s < nS && v) played += dur[s];
           if (s < nS && !v && stayDur[i] && stayDur[i][s] > EPS) pen += 400 + stayDur[i][s] * 60;
+          if (s === nS - 1 && !v && !R.until && I.fin.has(p)) pen += 400 + dur[s] * 60; // doit terminer le match sur le terrain
           if (v && !pv) { // enter
             if (s > 0) { entries[s]++; if (gkOnly[i] && gkLock[s]) pen += 40; if (I.oneBlock.has(p)) pen += 200; }
             if (s > 0) runStart = grid[s]; stints++;
@@ -447,6 +451,9 @@
     const maxS = {}; P.forEach(p => maxS[p.name] = p.oneBlock ? END : Math.max(R.minStint, p.minStint || 0, p.maxStint || R.maxStint));
     // stay : quarts (0 = Q1) où le coach ne veut pas que ce joueur sorte : il est sur le terrain tout le quart
     const stay = {}; P.forEach(p => { const L = (p.stay || []).filter(q => q >= 0 && q < R.quarters); if (L.length && fieldPlayer[p.name] && !locked.has(p.name)) stay[p.name] = new Set(L); });
+    // fin : joueurs qui doivent être sur le terrain au coup de sifflet final
+    const fin = new Set(P.filter(p => p.fin && fieldPlayer[p.name] && !locked.has(p.name)).map(p => p.name));
+    if (fin.size > posIds.length - 1) warnings.push(`Trop de joueurs doivent terminer le match sur le terrain (${fin.size}).`);
     if (!R.from) for (const p of P) if (stay[p.name]) {
       const pq = q => (R.quarters === 2 ? 'MT' : 'Q') + (q + 1);
       if (stay[p.name].has(0) && !starters.includes(p.name)) warnings.push(`${p.name} ne doit pas sortir ${R.quarters === 2 ? 'de la MT1' : 'du Q1'}, mais il n'est pas titulaire.`);
@@ -454,7 +461,7 @@
       const need = stay[p.name].size * R.qlen;
       if (p.target < need - 0.5) warnings.push(`${p.name} ne sort pas ${[...stay[p.name]].sort().map(pq).join(', ')} : il lui faut au moins ${fmtMin(need)} de jeu, tu lui en as prévu ${fmtMin(p.target)}.`);
     }
-    const I = { players, posIds, lineup, R, targets, locked, can, pref, gkPos, fieldPlayer, maxS, oneBlock, roles, rolesAvail, minFirst, minS, minS0, stay, since: input.since || null, prior: input.prior || null, times: changeTimes(R) };
+    const I = { players, posIds, lineup, R, targets, locked, can, pref, gkPos, fieldPlayer, maxS, oneBlock, roles, rolesAvail, minFirst, minS, minS0, stay, fin, since: input.since || null, prior: input.prior || null, times: changeTimes(R) };
     const rand = rng(seed || 12345);
     let best = null, bestScore = Infinity;
     const iters = input.iters || 300;
@@ -569,7 +576,7 @@
         const vac0 = new Set(o.vacate || []), posA = o.positions.filter(p => !vac0.has(p.id) && !fo.some(n => cur[n] === p.id));
         const st = stats(prefix, fr, T), playersA = o.players.filter(p => !outSet.has(p.name) && !fo.includes(p.name));
         const share = (T1 - T) / Math.max(EPS, END - T), lineupA = {}; for (const [n, q] of Object.entries(fr)) lineupA[q] = n;
-        const subA = buildPlan({ positions: posA, players: playersA.map(p => ({ name: p.name, pos: p.pos, rank: p.rank, target: Math.max(0, p.target + ((o.adjust || {})[p.name] || 0) - st.played[p.name]) * share, locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint, minStart: p.minStart, stay: p.stay })),
+        const subA = buildPlan({ positions: posA, players: playersA.map(p => ({ name: p.name, pos: p.pos, rank: p.rank, target: Math.max(0, p.target + ((o.adjust || {})[p.name] || 0) - st.played[p.name]) * share, locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint, minStart: p.minStart, stay: p.stay, fin: p.fin })),
           lineup: lineupA, rules: { ...o.rules, from: T, until: T1 }, since: st.since, prior: st.played, seed: (o.seed || 7) + 13, iters: 80, saIters: Math.round((o.saIters || 35000) / 3), chains: 2 });
         if (!subA.error && subA.segs.length) segsA = subA.segs;
       } catch (e) { segsA = null; }
@@ -629,7 +636,7 @@
     const attempt = seed => {
       let subSegs = [];
       if (T1 < END - EPS) { // un carton qui finit avec le match : plus rien à planifier
-        const sub = buildPlan({ positions, players: avail.map(p => ({ name: p.name, pos: p.pos, rank: p.rank, target: rem[p.name], locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint, minStart: p.minStart, stay: p.stay })), lineup, rules: { ...o.rules, from: T1 }, since, prior: played, seed, iters: 150, saIters: o.saIters || 35000, chains: 3 });
+        const sub = buildPlan({ positions, players: avail.map(p => ({ name: p.name, pos: p.pos, rank: p.rank, target: rem[p.name], locked: p.locked, oneBlock: p.oneBlock, maxStint: p.maxStint, roles: p.roles, minStint: p.minStint, minStart: p.minStart, stay: p.stay, fin: p.fin })), lineup, rules: { ...o.rules, from: T1 }, since, prior: played, seed, iters: 150, saIters: o.saIters || 35000, chains: 3 });
         if (sub.error) return sub;
         subSegs = sub.segs;
       }
@@ -688,6 +695,7 @@
         const cardIv = c.freezeOut.includes(p.name) ? [[c.T, T1]] : [];
         if (stayMiss([...iv, ...cardIv], [q], R.qlen, a, b) > 0.05) note(p.name + 's' + q, `${p.name} sort ${R.quarters === 2 ? 'pendant la' : 'pendant le'} ${pName(q)}, alors qu'il ne devait pas sortir`, null, true);
       }
+      if (p.fin && !(iv.length && iv[iv.length - 1][1] >= END - EPS)) note(p.name + 'fin', `${p.name} ne termine pas le match sur le terrain, alors qu'il devait le terminer`, null, true);
       // banc : morceaux hors du terrain (sans la période où il était exclu par un carton)
       let t0 = 0; const off = [];
       for (const [a, b] of iv) { if (a > t0 + EPS) off.push([t0, a]); t0 = b; }
