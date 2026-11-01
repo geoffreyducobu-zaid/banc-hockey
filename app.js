@@ -1189,13 +1189,11 @@ function matchView(){
       <div class="moves">${changeLines(next)}</div></div>`;
   }
   const seg = segAt(plan, Math.min(t, plan.segs[plan.segs.length-1].b - 0.01));
-  const upcomingIds = next ? new Set(next.outs.map(o=>o[0]).concat(next.moves.map(m=>m[0]))) : new Set();
-  const goesTo = next && !next.sys ? Object.fromEntries(next.moves.map(([p,, b]) => [p, b])) : {};
   const onIds = Object.entries(seg.on);
   const pitch = `<div class="pitch" aria-label="Joueurs sur le terrain">${pitchLines()}${PRESETS[curSys()].map(([id,label,line,x,y]) => {
       const who = onIds.find(([p,q]) => q === id)?.[0] || "Vide";
       const rl = (S.squad.find(p => p.name === who)?.roles || []).join("");
-      return `<div class="pp${upcomingIds.has(who)?" chg":""}" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(gShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}${goesTo[who] ? ` → ${esc(posShort(goesTo[who]))}` : ""}</span></div>`;}).join("")}</div>`;
+      return `<div class="pp" style="left:${x}%;top:${y}%"><span class="dot ${line}">${esc(gShort(id))}</span><span class="nm">${esc(who)}${rl?` <i class="rl">${esc(rl)}</i>`:""}</span></div>`;}).join("")}</div>`;
   const hurt = outForGood();
   const benchNames = present().map(p=>p.name).filter(n => !(n in seg.on)).map(n => hurt.includes(n) ? n + " 🩹" : n);
   const qChanges = visChanges(plan).filter(c => fmtQ(c.t).q === C.q || (Math.abs(c.t - (C.q-1)*ql) < 1e-6 && C.q>1) || (Math.abs(c.t - C.q*ql)<1e-6));
