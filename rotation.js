@@ -479,6 +479,7 @@
     let bestSA = runSA(false);
     if (movesOver(bestSA.segs)) { const alt = runSA(true); if (movesOver(alt.segs) < movesOver(bestSA.segs)) bestSA = alt; }
     best = bestSA; bestScore = bestSA.saScore;
+    polishPlaces(best.segs, I, movesOver);
     // build outputs
     const segs = best.segs.map(s => ({ a: s.a, b: s.b, on: Object.fromEntries(s.on) }));
     const changes = [];
@@ -495,6 +496,40 @@
     check.push(...roleGaps(best.segs.map(s => ({ a: s.a, b: s.b, on: Object.fromEntries(s.on) })), roles, rolesAvail));
     for (const p of players) if (Math.abs(best.played[p] - targets[p]) > 2.5) check.push(`${p} : ${fmtMin(best.played[p])} au lieu de ${fmtMin(targets[p])}`);
     return { segs, changes, played: best.played, targets, intervals: iv, warnings: [...warnings, ...check], score: bestScore };
+  }
+  // Dernière passe sur les places : deux joueurs sur le terrain en même temps échangent leurs places sur un morceau du plan
+  // si chacun y gagne en préférence (ordre de ses places), sans ajouter de changements de poste au-delà du maximum du coach.
+  // La compo de départ (ou le terrain au moment d'un imprévu) ne bouge pas.
+  function polishPlaces(segs, I, movesOver) {
+    const { pref, can, gkPos } = I, MV = 3;
+    const cost = () => {
+      let c = 0;
+      for (let i = 0; i < segs.length; i++) {
+        const s = segs[i], d = s.b - s.a;
+        for (const [p, q] of s.on) c += pref[p][q] * d;
+        if (i) for (const [p, q] of s.on) { const a = segs[i - 1].on.get(p); if (a !== undefined && a !== q) c += MV; }
+      }
+      return c;
+    };
+    const swap = (p, c, i, j) => { for (let k = i; k <= j; k++) { const on = segs[k].on, a = on.get(p); on.set(p, on.get(c)); on.set(c, a); } };
+    let cur = cost(), over = movesOver(segs.map(s => ({ on: s.on, a: s.a }))), improved = true, rounds = 0;
+    while (improved && rounds++ < 30) {
+      improved = false;
+      const names = [...new Set(segs.flatMap(s => [...s.on.keys()]))];
+      for (let x = 0; x < names.length; x++) for (let y = x + 1; y < names.length; y++) {
+        const p = names[x], c = names[y];
+        for (let i = 1; i < segs.length; i++) {
+          for (let j = i; j < segs.length; j++) {
+            const on = segs[j].on, qp = on.get(p), qc = on.get(c);
+            if (qp === undefined || qc === undefined || qp === gkPos || qc === gkPos || !can[p].has(qc) || !can[c].has(qp)) break;
+            swap(p, c, i, j);
+            const nc = cost(), no = nc < cur - 1e-6 ? movesOver(segs.map(s => ({ on: s.on, a: s.a }))) : Infinity;
+            if (nc < cur - 1e-6 && no <= over) { cur = nc; over = no; improved = true; break; }
+            swap(p, c, i, j);
+          }
+        }
+      }
+    }
   }
   function fmtMin(m) { const mm = Math.floor(m + EPS), ss = Math.round((m - mm) * 60); return ss ? `${mm}'${String(ss).padStart(2, '0')}` : `${mm}'`; }
 

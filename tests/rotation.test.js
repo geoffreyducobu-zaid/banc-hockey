@@ -306,3 +306,20 @@ test("terminent le match sur le terrain : ils sont sur le terrain au coup de sif
   for (const n of fin) assert.ok(n in last.on, `${n} ne termine pas sur le terrain`);
   assert.ok(!plan2.warnings.some(w => /ne termine pas/.test(w)), String(plan2.warnings));
 });
+
+test("places : presque jamais deux joueurs du terrain qui gagneraient tous les deux à échanger leurs places", () => {
+  // Un très court passage peut rester tel quel : l'échange coûterait plus de changements de poste qu'il ne rapporte.
+  const prefOf = {}; present.forEach(p => prefOf[p.name] = p.pos);
+  const rk = (n, q) => { const i = prefOf[n].indexOf(q); return i < 0 ? 99 : i; };
+  let bad = 0, tot = 0;
+  for (const s of plan.segs.slice(1)) {
+    const N = Object.keys(s.on).filter(n => s.on[n] !== "G"), d = s.b - s.a; tot += d * N.length;
+    const hit = new Set();
+    for (const a of N) for (const c of N) if (a < c) {
+      const qa = s.on[a], qc = s.on[c];
+      if (rk(a, qc) < rk(a, qa) && rk(c, qa) < rk(c, qc)) { hit.add(a); hit.add(c); }
+    }
+    bad += d * hit.size;
+  }
+  assert.ok(bad / tot < 0.02, `${bad.toFixed(1)}' sur ${tot}' de jeu à une place qu'un échange améliorerait`);
+});
