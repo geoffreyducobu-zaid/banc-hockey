@@ -291,3 +291,18 @@ test("banc maximum d'affilée, pauses comprises : aucun joueur de champ n'attend
     assert.ok(END - t <= 10 + EPS, `${p.name} : ${END - t}' sur le banc à la fin`);
   }
 });
+
+test("terminent le match sur le terrain : ils sont sur le terrain au coup de sifflet final", () => {
+  const field = present.filter(p => p.pos.some(q => q !== "G") && p.note < 5);
+  // deux joueurs qui ne sont pas titulaires : ils doivent rentrer et finir
+  const starters = new Set(Object.values(ex.lineup)), fin = field.filter(p => !starters.has(p.name)).slice(0, 2).map(p => p.name);
+  const plan2 = R.buildPlan({
+    positions: Object.keys(LINE).map(id => ({id, gk: id === "G"})),
+    players: present.map(p => ({name:p.name, pos:p.pos, target:targets[p.name], locked: p.note >= 5 && !p.minutes, oneBlock: p.note >= 5, maxStint:p.maxStint || 0, roles:p.roles || [], minFirst:p.minFirst || 0, minStint:minStintOf(p), fin: fin.includes(p.name)})),
+    lineup: ex.lineup, rules, seed: 4242, iters: 300, saIters: 40000, chains: 4,
+  });
+  assert.ok(!plan2.error, String(plan2.warnings));
+  const last = plan2.segs[plan2.segs.length - 1];
+  for (const n of fin) assert.ok(n in last.on, `${n} ne termine pas sur le terrain`);
+  assert.ok(!plan2.warnings.some(w => /ne termine pas/.test(w)), String(plan2.warnings));
+});

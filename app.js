@@ -278,7 +278,7 @@ function generate(seed){
   const positions = PRESETS[S.preset].map(p => ({id:p[0], gk:p[2]==="gk"}));
   const T = computeTargets();
   // Plan automatique : un joueur à 0 minute reste sur le banc tout le match.
-  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:mPos(p), rank: placeRank(mPos(p), S.preset), target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p), minStart: minStartOf(p), stay: stayOf(p.name)}));
+  const players = present().filter(p => timeMode() !== "notes" || T[p.name] > 0).map(p => ({name:p.name, pos:mPos(p), rank: placeRank(mPos(p), S.preset), target:T[p.name], locked: fullMatch(p), oneBlock: fullMatch(p), maxStint: maxStintOf(p), roles: p.roles || [], minFirst: p.minFirst || 0, minStint: minStintOf(p), minStart: minStartOf(p), stay: stayOf(p.name), fin: finOf(p.name)}));
   let best = null;
   for (let k = 0; k < 3; k++) {
     const p = R.buildPlan({positions, players, lineup:S.lineup, rules:S.rules, seed: seed + k*7919, iters:300, saIters:40000, chains:4});
@@ -528,7 +528,7 @@ function replanBase(T, sw){
   // Un joueur déjà sur le terrain garde aussi la place où il joue (même hors de ses places, ex. après un changement de système).
   const curOn = sw ? {} : (segAt(S.plan, T)?.on || {});
   const posOf = x => { const P = sw || sys !== teamSys() ? calcPos(x, sys) : playerPos(x, sys), L = sw ? [...P] : [...new Set([...P, ...extraPos(x.name, T), ...(curOn[x.name] ? [curOn[x.name]] : [])])], v = sw ? sw.on[x.name] : invPos(x.name, T); return v ? [v, ...L.filter(q => q !== v)] : L; };
-  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:posOf(x), rank: placeRank(posOf(x), sys), target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x), stay: stayOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])])}));
+  const players = present().filter(x => !sits(x)).map(x => ({name:x.name, pos:posOf(x), rank: placeRank(posOf(x), sys), target: S.plan.targets?.[x.name] ?? Tg[x.name], locked: fullMatch(x), oneBlock: fullMatch(x), maxStint: maxStintOf(x), roles: x.roles || [], minFirst: x.minFirst || 0, minStint: minStintOf(x), minStart: minStartOf(x), stay: stayOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])]), fin: finOf(x.name, [...eventsOf(), ...(inc?.type === "libre" && inc.player ? [{type:"libre", player:inc.player, t:T}] : [])])}));
   // places laissées vides par un carton rouge (dans le système en place ; un changement de système dit lui-même lesquelles)
   const vacate = sw ? sw.vacate : [...(se?.vacate || []), ...eventsOf().filter(e => e.type==="rouge" && (!se || e.t >= se.t - 1e-6)).map(e => e.pos)];
   const o = {T, positions, players, rules:S.rules, out: outForGood(), vacate, seed: Date.now()%100000, adjust: {}};
@@ -1595,6 +1595,10 @@ const perDiff = q => [...Object.keys(perOf(q)).filter(k => PER_RULES.some(([x]) 
 // Joueurs qui ne sortent pas de la période q (choisis par le coach), seulement ceux encore dans l'effectif.
 const stayOfQ = q => (perOf(q).stay || []).filter(n => S.squad.some(p => p.name === n));
 // Périodes où ce joueur ne sort pas. Hors plan : s'il a été sorti à la main pendant une période, elle ne compte plus pour lui.
+// Joueurs qui terminent le match sur le terrain (règle pour tout le match). Sorti par le coach en hors plan : la règle tombe.
+const finList = () => (S.rules.finish || []).filter(n => S.squad.some(p => p.name === n));
+const finOf = (n, evs = []) => finList().includes(n) && !evs.some(e => e.type === "libre" && e.player === n);
+function toggleFin(n){ const L = finList(); S.rules.finish = L.includes(n) ? L.filter(x => x !== n) : [...L, n]; if (!S.rules.finish.length) delete S.rules.finish; rulesChanged(); }
 const stayOf = (n, evs = []) => Array.from({length: +S.rules.quarters}, (_, q) => q).filter(q => stayOfQ(q).includes(n) && !evs.some(e => e.type === "libre" && e.player === n && Math.floor(e.t / S.rules.qlen + 1e-6) === q));
 function toggleStay(q, n){
   const per = {...(S.rules.per || {})}, o = {...(per[q] || {})}, L = stayOfQ(q);
@@ -1697,6 +1701,8 @@ function rulesBody(){
     ${ruleRow("minBench", "Minimum sur le banc avant de rentrer", "min", "Évite qu'un joueur sorte et rentre presque tout de suite.", r.minBench, 'data-rule="minBench"')}
     <div class="set"><div><b>Banc maximum d'affilée, pauses comprises</b><div class="muted">Entre sa sortie et sa rentrée, même à cheval sur une pause (seules les minutes de jeu comptent). Vide = pas de limite.</div></div><span class="rnum"><input class="set-num" type="number" inputmode="decimal" step="0.5" min="0" data-ropt="maxBenchRun" value="${esc(r.maxBenchRun || "")}" placeholder="—" aria-label="Banc maximum d'affilée, pauses comprises"><small>min</small></span></div>
     ${ruleRow("minPlay", "Temps de jeu minimum", "min", "Le plan évite qu'un joueur joue moins que ça sur le match, sauf si tu lui as prévu moins.", r.minPlay, 'data-rule="minPlay"')}
+    ${(() => { const L = finList(), field = S.squad.filter(p => p.name.trim() && p.pos.some(x => x !== "G")); return `<div class="set stay${L.length ? " own" : ""}" style="display:block"><div><b>Terminent le match sur le terrain</b><div class="muted">Touche un ou plusieurs joueurs : ils sont sur le terrain au coup de sifflet final. S'ils sont sur le banc, ils rentrent au plus tard au dernier changement. Les joueurs absents sont ignorés.</div></div>
+    <div class="stay-l">${field.length ? field.map(p => `<button class="btn small" data-fin="${esc(p.name)}" aria-pressed="${L.includes(p.name)}">${esc(p.name)}</button>`).join("") : `<span class="muted">Ajoute d'abord tes joueurs dans « Effectif ».</span>`}</div></div>`; })()}
   </div>
   <p class="muted" style="margin:10px 4px 0;font-size:.85rem">Ces règles-là valent sur tout le match : un passage peut commencer dans un ${pWord()} et finir dans le suivant.</p>
   <div class="row" style="margin-top:12px;justify-content:flex-end">
@@ -1711,6 +1717,7 @@ function bindRules(v){
   v.querySelectorAll("[data-perq]").forEach(b => b.addEventListener("click", () => { rulesQ = b.dataset.perq === "base" ? null : +b.dataset.perq; render(); }));
   v.querySelectorAll("[data-pr]").forEach(el => el.addEventListener("change", () => { const [q, k] = el.dataset.pr.split(":"); setPer(+q, k, el.value === "" || isNaN(+el.value) ? null : Math.max(0, +el.value)); }));
   v.querySelectorAll("[data-stay]").forEach(b => b.addEventListener("click", () => toggleStay(+b.dataset.stay, b.dataset.n)));
+  v.querySelectorAll("[data-fin]").forEach(b => b.addEventListener("click", () => toggleFin(b.dataset.fin)));
   v.querySelectorAll("[data-pb]").forEach(b => b.addEventListener("click", () => { const [q, k, val] = b.dataset.pb.split(":"); setPer(+q, k, val === "true"); }));
   $("#perClear")?.addEventListener("click", () => { const per = {...(S.rules.per || {})}; delete per[rulesQ]; S.rules.per = per; rulesChanged(); });
   $("#rulesReset")?.addEventListener("click", () => {
@@ -1980,6 +1987,7 @@ function bindCoach(){
       p.name = nn;
       for (const q in S.lineup) if (S.lineup[q] === old) S.lineup[q] = nn;
       Object.values(S.rules.per || {}).forEach(o => { if (o.stay) o.stay = o.stay.map(x => x === old ? nn : x); });
+      if (S.rules.finish) S.rules.finish = S.rules.finish.map(x => x === old ? nn : x);
       // Les changements écrits par le coach, les plans et les compos des autres matchs suivent aussi le nouveau nom.
       [S.manual, S.plan, S.prevPlan, S.basePlan, ...S.matches.filter(m => m.id !== S.curMatch)].forEach(o => renameIn(o, old, nn));
       // La saison aussi : sinon ses stats seraient coupées en deux (ancien et nouveau nom).
